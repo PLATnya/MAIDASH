@@ -1,0 +1,14 @@
+.env
+.DS_Store
+__pycache__/
+data/
+.vscode/
+.ipynb_checkpoints/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+.coverage.*.*
+.coverage.*.*.*
+.coverage.*.*.*.*
