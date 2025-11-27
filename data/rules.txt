@@ -1,0 +1,5 @@
+rule1: coppy all the files to cloud
+rule2: never give up
+rule3: don't talk about fight club
+rule4: misato is the best girl
+rule5: don't trust the robots
