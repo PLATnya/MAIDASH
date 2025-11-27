@@ -5,6 +5,7 @@ Loads text files from the 'data' folder and uses RAG to answer questions.
 """
 
 import os
+import uuid
 from pathlib import Path
 from langchain_community.document_loaders import TextLoader, DirectoryLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -25,12 +26,12 @@ def load_documents(data_dir: str = "data"):
         data_path.mkdir(exist_ok=True)
         return []
     
-    # Load all text files from the directory
+    # Load all text files from the directory (fresh load, no caching)
     loader = DirectoryLoader(
         data_dir,
         glob="**/*.txt",
         loader_cls=TextLoader,
-        show_progress=True
+        show_progress=False
     )
     
     try:
@@ -44,8 +45,8 @@ def load_documents(data_dir: str = "data"):
         return []
 
 
-def create_vector_store(documents, persist_directory: str = None):
-    """Create a vector store from documents using Ollama embeddings."""
+def create_vector_store(documents):
+    """Create a fresh vector store from documents using Ollama embeddings."""
     if not documents:
         return None
     
@@ -63,19 +64,15 @@ def create_vector_store(documents, persist_directory: str = None):
     print("Creating embeddings with Ollama...")
     embeddings = OllamaEmbeddings(model="nomic-embed-text")
     
-    # Create vector store (without persistence to allow reinitialization)
-    print("Creating vector store...")
-    if persist_directory:
-        vectorstore = Chroma.from_documents(
-            documents=texts,
-            embedding=embeddings,
-            persist_directory=persist_directory
-        )
-    else:
-        vectorstore = Chroma.from_documents(
-            documents=texts,
-            embedding=embeddings
-        )
+    # Create vector store with unique collection name to avoid persistence
+    # Use a unique collection name each time to ensure fresh start
+    collection_name = f"temp_collection_{uuid.uuid4().hex[:8]}"
+    print("Creating fresh vector store...")
+    vectorstore = Chroma.from_documents(
+        documents=texts,
+        embedding=embeddings,
+        collection_name=collection_name
+    )
     
     print(f"Vector store created with {len(texts)} document chunks\n")
     return vectorstore
@@ -147,16 +144,22 @@ def main():
             if not question:
                 continue
             
-            print("\nReinitializing vector store and chain...")
+            print("\nReloading documents and reinitializing vector store and chain...")
             
-            # Reinitialize vector store on every loop step
-            vectorstore = create_vector_store(load_and_get_documents())
+            # Reload documents fresh from disk on every iteration
+            documents = load_and_get_documents()
+            if not documents:
+                print("No documents found. Skipping this query.")
+                continue
+            
+            # Create fresh vector store from reloaded documents
+            vectorstore = create_vector_store(documents)
             
             if not vectorstore:
-                print("Failed to create vector store. Exiting.")
-                return
+                print("Failed to create vector store. Skipping this query.")
+                continue
             
-            # Reinitialize QA chain on every loop step
+            # Create fresh QA chain on every loop step
             print("Initializing QA chain with Ollama...")
             qa_chain = create_qa_chain(vectorstore)
 
@@ -176,6 +179,13 @@ def main():
                         sources.add(source)
                 for i, source in enumerate(list(sources)[:2], 1):
                     print(f"  {i}. {source}")
+            
+            # Clean up: delete the vector store to free memory and ensure no persistence
+            try:
+                if hasattr(vectorstore, 'delete_collection'):
+                    vectorstore.delete_collection()
+            except:
+                pass
             
             print()
             
