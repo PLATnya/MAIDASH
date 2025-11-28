@@ -20,6 +20,20 @@ var cy = cytoscape({
             'font-size': '16px',
             'font-weight': 'bold'
         }
+    }, {
+        selector: 'edge',
+        style: {
+            'width': 2,
+            'line-color': '#666',
+            'curve-style': 'bezier',
+            'target-arrow-shape': 'none'
+        }
+    }, {
+        selector: 'node.linking-source',
+        style: {
+            'border-color': '#e74c3c',
+            'border-width': 4
+        }
     }]
 });
 
@@ -28,6 +42,11 @@ var container = document.getElementById('cy');
 
 // Counter for unique node IDs
 var nodeIdCounter = 0;
+var edgeIdCounter = 0;
+
+// Linking mode variables
+var linkingMode = false;
+var sourceNodeForLink = null;
 
 // Variable to store the current input box and click position
 var textInputBox = null;
@@ -36,7 +55,9 @@ var graphPosition = null;
 var mousePosition = null;
 var contextMenu = null;
 var selectedNode = null;
+var selectedEdge = null;
 var isNodeRightClick = false;
+var isEdgeRightClick = false;
 // Helper function to convert screen coordinates to graph coordinates
 function screenToGraph(screenX, screenY) {
     var containerRect = container.getBoundingClientRect();
@@ -64,7 +85,9 @@ function removeContextMenu() {
         contextMenu.remove();
         contextMenu = null;
         selectedNode = null;
+        selectedEdge = null;
         isNodeRightClick = false;
+        isEdgeRightClick = false;
     }
 }
 
@@ -91,6 +114,7 @@ function createContextMenu(x, y, node) {
     // Create menu items
     var menuItems = [
         { label: 'Edit', action: function() { editNode(node); } },
+        { label: 'Link', action: function() { startLinking(node); } },
         { label: 'Delete', action: function() { deleteNode(node); } }
     ];
     
@@ -187,6 +211,171 @@ function deleteNode(node) {
     cy.remove(node);
 }
 
+// Function to delete edge
+function deleteEdge(edge) {
+    cy.remove(edge);
+}
+
+// Function to create context menu for edges
+function createEdgeContextMenu(x, y, edge) {
+    // Remove existing context menu if any
+    removeContextMenu();
+    
+    selectedEdge = edge;
+    
+    // Create context menu container
+    contextMenu = document.createElement('div');
+    contextMenu.style.position = 'absolute';
+    contextMenu.style.left = x + 'px';
+    contextMenu.style.top = y + 'px';
+    contextMenu.style.backgroundColor = '#ffffff';
+    contextMenu.style.border = '1px solid #ccc';
+    contextMenu.style.borderRadius = '4px';
+    contextMenu.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
+    contextMenu.style.zIndex = '1001';
+    contextMenu.style.minWidth = '150px';
+    contextMenu.style.padding = '4px 0';
+    
+    // Create menu items
+    var menuItems = [
+        { label: 'Delete', action: function() { deleteEdge(edge); } }
+    ];
+    
+    menuItems.forEach(function(item) {
+        var menuItem = document.createElement('div');
+        menuItem.textContent = item.label;
+        menuItem.style.padding = '8px 16px';
+        menuItem.style.cursor = 'pointer';
+        menuItem.style.fontSize = '14px';
+        menuItem.style.color = '#333';
+        
+        menuItem.addEventListener('mouseenter', function() {
+            menuItem.style.backgroundColor = '#f0f0f0';
+        });
+        menuItem.addEventListener('mouseleave', function() {
+            menuItem.style.backgroundColor = 'transparent';
+        });
+        
+        menuItem.addEventListener('click', function() {
+            item.action();
+            removeContextMenu();
+        });
+        
+        contextMenu.appendChild(menuItem);
+    });
+    
+    document.body.appendChild(contextMenu);
+}
+
+// Function to start linking mode
+function startLinking(node) {
+    // Cancel any existing linking mode
+    cancelLinking();
+    
+    // Set linking mode
+    linkingMode = true;
+    sourceNodeForLink = node;
+    
+    // Add visual indicator to source node
+    node.addClass('linking-source');
+    
+    // Change cursor to indicate linking mode
+    container.style.cursor = 'crosshair';
+}
+
+// Function to cancel linking mode
+function cancelLinking() {
+    if (sourceNodeForLink) {
+        sourceNodeForLink.removeClass('linking-source');
+    }
+    linkingMode = false;
+    sourceNodeForLink = null;
+    container.style.cursor = '';
+}
+
+// Function to create edge between two nodes
+function createEdge(sourceNode, targetNode) {
+    // Don't create edge if source and target are the same
+    if (sourceNode.id() === targetNode.id()) {
+        return;
+    }
+    
+    // Check if edge already exists
+    var existingEdges = cy.edges().filter(function(edge) {
+        return (edge.source().id() === sourceNode.id() && edge.target().id() === targetNode.id()) ||
+               (edge.source().id() === targetNode.id() && edge.target().id() === sourceNode.id());
+    });
+    
+    if (existingEdges.length > 0) {
+        // Edge already exists, don't create duplicate
+        return;
+    }
+    
+    // Create new edge
+    var edgeId = 'edge_' + (++edgeIdCounter);
+    cy.add({
+        data: {
+            id: edgeId,
+            source: sourceNode.id(),
+            target: targetNode.id()
+        }
+    });
+}
+
+// Handle click on nodes (for linking mode)
+cy.on('tap', 'node', function(evt) {
+    if (linkingMode && sourceNodeForLink) {
+        var targetNode = evt.target;
+        
+        // Don't create edge if clicking on the same node
+        if (sourceNodeForLink.id() !== targetNode.id()) {
+            createEdge(sourceNodeForLink, targetNode);
+        }
+        
+        // Exit linking mode
+        cancelLinking();
+    }
+});
+
+// Handle click on canvas background (to cancel linking mode)
+cy.on('tap', function(evt) {
+    // If clicking on background (not on a node) and in linking mode, cancel it
+    if (linkingMode && evt.target === cy) {
+        cancelLinking();
+    }
+});
+
+// Handle right-click on edges
+cy.on('cxttap', 'edge', function(evt) {
+    isEdgeRightClick = true;
+    
+    // Get the original event to access mouse coordinates
+    var originalEvent = evt.originalEvent || evt.cyEvent || evt;
+    
+    // Get click position from the original event
+    var screenX = originalEvent.clientX || originalEvent.pageX;
+    var screenY = originalEvent.clientY || originalEvent.pageY;
+    
+    // If we can't get coordinates from original event, use edge midpoint
+    if (!screenX || !screenY) {
+        var sourcePos = evt.target.source().renderedPosition();
+        var targetPos = evt.target.target().renderedPosition();
+        var midX = (sourcePos.x + targetPos.x) / 2;
+        var midY = (sourcePos.y + targetPos.y) / 2;
+        var containerRect = container.getBoundingClientRect();
+        screenX = containerRect.left + midX;
+        screenY = containerRect.top + midY;
+    }
+    
+    // Create edge context menu
+    createEdgeContextMenu(screenX, screenY, evt.target);
+    
+    // Reset flag after a short delay
+    setTimeout(function() {
+        isEdgeRightClick = false;
+    }, 100);
+});
+
 // Handle right-click on nodes
 cy.on('cxttap', 'node', function(evt) {
     isNodeRightClick = true;
@@ -217,10 +406,15 @@ cy.on('cxttap', 'node', function(evt) {
 
 // Handle right-click on the canvas (only when not clicking on a node)
 container.addEventListener('contextmenu', function(e) {
-    // Check if we clicked on a node
-    if (isNodeRightClick || contextMenu) {
+    // Cancel linking mode if active
+    if (linkingMode) {
+        cancelLinking();
+    }
+    
+    // Check if we clicked on a node or edge
+    if (isNodeRightClick || isEdgeRightClick || contextMenu) {
         e.preventDefault(); // Prevent default context menu
-        return; // Let the node context menu handle it
+        return; // Let the node/edge context menu handle it
     }
     
     e.preventDefault(); // Prevent default context menu
@@ -319,8 +513,13 @@ document.addEventListener('click', function(e) {
 
 // Close context menu on Escape key
 document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape' && contextMenu) {
-        removeContextMenu();
+    if (e.key === 'Escape') {
+        if (contextMenu) {
+            removeContextMenu();
+        }
+        if (linkingMode) {
+            cancelLinking();
+        }
     }
 });
 
