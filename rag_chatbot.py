@@ -6,43 +6,19 @@ Loads text files from the 'data' folder and uses RAG to answer questions.
 
 import os
 import uuid
-from pathlib import Path
-from langchain_community.document_loaders import TextLoader, DirectoryLoader
+
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
+from langchain_neo4j import Neo4jVector
 from langchain_community.embeddings import OllamaEmbeddings
 from langchain_community.llms import Ollama
 from langchain_core.prompts import PromptTemplate
 from langchain_classic.chains import create_retrieval_chain
 from langchain_classic.chains.combine_documents import create_stuff_documents_chain
+from dotenv import load_dotenv
+    
+from file_tools import load_documents
 
-
-def load_documents(data_dir: str = "data"):
-    """Load all text files from the data directory."""
-    data_path = Path(data_dir)
-    
-    if not data_path.exists():
-        print(f"Warning: '{data_dir}' directory does not exist. Creating it...")
-        data_path.mkdir(exist_ok=True)
-        return []
-    
-    # Load all text files from the directory (fresh load, no caching)
-    loader = DirectoryLoader(
-        data_dir,
-        glob="**/*.txt",
-        loader_cls=TextLoader,
-        show_progress=False
-    )
-    
-    try:
-        documents = loader.load()
-        if not documents:
-            print(f"Warning: No .txt files found in '{data_dir}' directory.")
-            print("Please add some .txt files to the data folder for RAG to work.")
-        return documents
-    except Exception as e:
-        print(f"Error loading documents: {e}")
-        return []
 
 
 def create_vector_store(documents):
@@ -75,6 +51,70 @@ def create_vector_store(documents):
     )
     
     print(f"Vector store created with {len(texts)} document chunks\n")
+    return vectorstore
+
+
+def create_vector_store_neo4j(documents, index_name: str = None, 
+                               url: str = None, username: str = None, password: str = None):
+    """
+    Create a fresh vector store in Neo4j from documents using Ollama embeddings.
+    
+    Args:
+        documents: List of documents to store
+        index_name: Optional index name (will generate unique name if not provided)
+        url: Neo4j connection URL (defaults to NEO4J_URI env var or bolt://localhost:7687)
+        username: Neo4j username (defaults to NEO4J_USERNAME env var)
+        password: Neo4j password (defaults to NEO4J_PASSWORD env var)
+    
+    Returns:
+        Neo4jVector instance
+    """
+    if not documents:
+        return None
+    
+    # Load environment variables
+    load_dotenv()
+    
+    # Split documents into chunks
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000,
+        chunk_overlap=200,
+        length_function=len,
+    )
+    
+    texts = text_splitter.split_documents(documents)
+    print(f"\nSplit documents into {len(texts)} chunks")
+    
+    # Create embeddings using Ollama
+    print("Creating embeddings with Ollama...")
+    embeddings = OllamaEmbeddings(model="nomic-embed-text")
+    
+    # Use unique index name to avoid persistence conflicts
+    if not index_name:
+        index_name = f"vector_index_{uuid.uuid4().hex[:8]}"
+    
+    # Get connection parameters from args or environment variables
+    neo4j_url = url or os.getenv("NEO4J_URI", "bolt://localhost:7687")
+    neo4j_username = username or os.getenv("NEO4J_USERNAME", "neo4j")
+    neo4j_password = password or os.getenv("NEO4J_PASSWORD", "")
+    
+    print(f"Creating Neo4j vector store with index: {index_name}...")
+    print(f"Connecting to Neo4j at: {neo4j_url}")
+    
+    # Create Neo4j vector store
+    vectorstore = Neo4jVector.from_documents(
+        documents=texts,
+        embedding=embeddings,
+        url=neo4j_url,
+        username=neo4j_username,
+        password=neo4j_password,
+        index_name=index_name,
+        node_label="DocumentChunk",
+        text_node_property="text",
+        embedding_node_property="embedding"
+    )
+    
+    print(f"Neo4j vector store created with {len(texts)} document chunks\n")
     return vectorstore
 
 def create_qa_chain(vectorstore, model_name: str = "deepseek-v3.1:671b-cloud"):
@@ -153,7 +193,7 @@ def main():
                 continue
             
             # Create fresh vector store from reloaded documents
-            vectorstore = create_vector_store(documents)
+            vectorstore = create_vector_store_neo4j(documents)
             
             if not vectorstore:
                 print("Failed to create vector store. Skipping this query.")
