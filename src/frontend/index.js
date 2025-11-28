@@ -34,6 +34,12 @@ var cy = cytoscape({
             'border-color': '#e74c3c',
             'border-width': 4
         }
+    }, {
+        selector: 'node.resizing',
+        style: {
+            'border-color': '#27ae60',
+            'border-width': 3
+        }
     }]
 });
 
@@ -58,6 +64,14 @@ var selectedNode = null;
 var selectedEdge = null;
 var isNodeRightClick = false;
 var isEdgeRightClick = false;
+
+// Resizing variables
+var resizingMode = false;
+var nodeBeingResized = null;
+var resizeStartWidth = 0;
+var resizeStartHeight = 0;
+var resizeStartMouseX = 0;
+var resizeStartMouseY = 0;
 // Helper function to convert screen coordinates to graph coordinates
 function screenToGraph(screenX, screenY) {
     var containerRect = container.getBoundingClientRect();
@@ -114,6 +128,7 @@ function createContextMenu(x, y, node) {
     // Create menu items
     var menuItems = [
         { label: 'Edit', action: function() { editNode(node); } },
+        { label: 'Resize', action: function() { startResizing(node, 0, 0); } },
         { label: 'Link', action: function() { startLinking(node); } },
         { label: 'Delete', action: function() { deleteNode(node); } }
     ];
@@ -214,6 +229,77 @@ function deleteNode(node) {
 // Function to delete edge
 function deleteEdge(edge) {
     cy.remove(edge);
+}
+
+// Function to start resizing a node
+function startResizing(node, mouseX, mouseY) {
+    // Cancel any existing resize mode
+    cancelResizing();
+    
+    // Cancel linking mode if active
+    if (linkingMode) {
+        cancelLinking();
+    }
+    
+    // Set resizing mode
+    resizingMode = true;
+    nodeBeingResized = node;
+    
+    // Store initial node dimensions
+    resizeStartWidth = node.width();
+    resizeStartHeight = node.height();
+    
+    // Store initial mouse position
+    resizeStartMouseX = mouseX || 0;
+    resizeStartMouseY = mouseY || 0;
+    
+    // Add visual indicator
+    node.addClass('resizing');
+    
+    // Change cursor
+    container.style.cursor = 'nwse-resize';
+}
+
+// Function to cancel resizing mode
+function cancelResizing() {
+    if (nodeBeingResized) {
+        nodeBeingResized.removeClass('resizing');
+    }
+    resizingMode = false;
+    nodeBeingResized = null;
+    resizeStartWidth = 0;
+    resizeStartHeight = 0;
+    resizeStartMouseX = 0;
+    resizeStartMouseY = 0;
+    container.style.cursor = '';
+}
+
+// Function to resize node based on mouse movement
+function resizeNode(mouseX, mouseY) {
+    if (!resizingMode || !nodeBeingResized) {
+        return;
+    }
+    
+    // Get node position
+    var nodePos = nodeBeingResized.renderedPosition();
+    var containerRect = container.getBoundingClientRect();
+    
+    // Calculate distance from node center to mouse
+    var nodeScreenX = containerRect.left + nodePos.x;
+    var nodeScreenY = containerRect.top + nodePos.y;
+    
+    // Calculate new dimensions based on distance from center
+    var deltaX = mouseX - nodeScreenX;
+    var deltaY = mouseY - nodeScreenY;
+    
+    // Convert screen distance to graph distance
+    var zoom = cy.zoom();
+    var newWidth = Math.max(50, Math.abs(deltaX) * 2 / zoom); // Minimum width of 50
+    var newHeight = Math.max(50, Math.abs(deltaY) * 2 / zoom); // Minimum height of 50
+    
+    // Update node size
+    nodeBeingResized.style('width', newWidth);
+    nodeBeingResized.style('height', newHeight);
 }
 
 // Function to create context menu for edges
@@ -335,6 +421,11 @@ cy.on('tap', 'node', function(evt) {
         // Exit linking mode
         cancelLinking();
     }
+    
+    // If in resizing mode, clicking a node stops resizing
+    if (resizingMode) {
+        cancelResizing();
+    }
 });
 
 // Handle click on canvas background (to cancel linking mode)
@@ -342,6 +433,10 @@ cy.on('tap', function(evt) {
     // If clicking on background (not on a node) and in linking mode, cancel it
     if (linkingMode && evt.target === cy) {
         cancelLinking();
+    }
+    // Cancel resizing if clicking on background
+    if (resizingMode && evt.target === cy) {
+        cancelResizing();
     }
 });
 
@@ -409,6 +504,10 @@ container.addEventListener('contextmenu', function(e) {
     // Cancel linking mode if active
     if (linkingMode) {
         cancelLinking();
+    }
+    // Cancel resizing mode if active
+    if (resizingMode) {
+        cancelResizing();
     }
     
     // Check if we clicked on a node or edge
@@ -511,6 +610,13 @@ document.addEventListener('click', function(e) {
     }
 });
 
+// Handle mouse move for resizing
+container.addEventListener('mousemove', function(e) {
+    if (resizingMode && nodeBeingResized) {
+        resizeNode(e.clientX, e.clientY);
+    }
+});
+
 // Close context menu on Escape key
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
@@ -519,6 +625,9 @@ document.addEventListener('keydown', function(e) {
         }
         if (linkingMode) {
             cancelLinking();
+        }
+        if (resizingMode) {
+            cancelResizing();
         }
     }
 });
