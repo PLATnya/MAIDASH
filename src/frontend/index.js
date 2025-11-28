@@ -93,6 +93,43 @@ function screenToGraph(screenX, screenY) {
     };
 }
 
+// Function to style input box
+function styleInputBox(inputBox) {
+    inputBox.style.position = 'absolute';
+    inputBox.style.padding = '12px 16px';
+    inputBox.style.fontSize = '15px';
+    inputBox.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+    inputBox.style.border = '2px solid #3498db';
+    inputBox.style.borderRadius = '8px';
+    inputBox.style.zIndex = '1000';
+    inputBox.style.outline = 'none';
+    inputBox.style.backgroundColor = '#ffffff';
+    inputBox.style.color = '#2c3e50';
+    inputBox.style.boxShadow = '0 4px 12px rgba(52, 152, 219, 0.3), 0 2px 4px rgba(0, 0, 0, 0.1)';
+    inputBox.style.transition = 'all 0.2s ease';
+    inputBox.style.minWidth = '200px';
+    inputBox.style.maxWidth = '400px';
+    
+    // Store base transform (should be set before calling this function)
+    var baseTransform = inputBox.style.transform || 'translate(-50%, -50%)';
+    inputBox.dataset.baseTransform = baseTransform;
+    
+    // Add focus styles
+    inputBox.addEventListener('focus', function() {
+        this.style.borderColor = '#2980b9';
+        this.style.boxShadow = '0 6px 16px rgba(52, 152, 219, 0.4), 0 2px 6px rgba(0, 0, 0, 0.15)';
+        var base = this.dataset.baseTransform || 'translate(-50%, -50%)';
+        this.style.transform = base + ' scale(1.02)';
+    });
+    
+    inputBox.addEventListener('blur', function() {
+        this.style.borderColor = '#3498db';
+        this.style.boxShadow = '0 4px 12px rgba(52, 152, 219, 0.3), 0 2px 4px rgba(0, 0, 0, 0.1)';
+        var base = this.dataset.baseTransform || 'translate(-50%, -50%)';
+        this.style.transform = base;
+    });
+}
+
 // Function to remove context menu
 function removeContextMenu() {
     if (contextMenu) {
@@ -178,18 +215,11 @@ function editNode(node) {
     // Create input text box at node position
     textInputBox = document.createElement('input');
     textInputBox.type = 'text';
-    textInputBox.style.position = 'absolute';
     textInputBox.style.left = screenX + 'px';
     textInputBox.style.top = screenY + 'px';
     textInputBox.style.transform = 'translate(-50%, -50%)';
-    textInputBox.style.padding = '8px 12px';
-    textInputBox.style.fontSize = '14px';
-    textInputBox.style.border = '2px solid #3498db';
-    textInputBox.style.borderRadius = '5px';
-    textInputBox.style.zIndex = '1000';
-    textInputBox.style.outline = 'none';
-    textInputBox.style.backgroundColor = '#ffffff';
     textInputBox.value = currentLabel;
+    styleInputBox(textInputBox);
     
     document.body.appendChild(textInputBox);
     textInputBox.focus();
@@ -533,18 +563,11 @@ container.addEventListener('contextmenu', function(e) {
     // Create input text box at mouse position
     textInputBox = document.createElement('input');
     textInputBox.type = 'text';
-    textInputBox.style.position = 'absolute';
     textInputBox.style.left = clickPosition.x + 'px';
     textInputBox.style.top = clickPosition.y + 'px';
     textInputBox.style.transform = 'translate(-50%, -50%)';
-    textInputBox.style.padding = '8px 12px';
-    textInputBox.style.fontSize = '14px';
-    textInputBox.style.border = '2px solid #3498db';
-    textInputBox.style.borderRadius = '5px';
-    textInputBox.style.zIndex = '1000';
-    textInputBox.style.outline = 'none';
-    textInputBox.style.backgroundColor = '#ffffff';
     textInputBox.value = '';
+    styleInputBox(textInputBox);
     
     document.body.appendChild(textInputBox);
     textInputBox.focus();
