@@ -75,21 +75,13 @@ var resizeStartMouseY = 0;
 // Helper function to convert screen coordinates to graph coordinates
 function screenToGraph(screenX, screenY) {
     var containerRect = container.getBoundingClientRect();
-    var x = screenX - containerRect.left;
-    var y = screenY - containerRect.top;
+    // Get coordinates relative to container (rendered coordinates)
+    var renderedX = screenX - containerRect.left;
+    var renderedY = screenY - containerRect.top;
     
-    var pan = cy.pan();
-    var zoom = cy.zoom();
-    var centerX = containerRect.width / 2;
-    var centerY = containerRect.height / 2;
-    
-    // Convert: graphPos = (screenPos - center - pan) / zoom
-    // Cytoscape Y axis points up (mathematical coordinates), screen Y points down
     return {
-        // x: (x - centerX - pan.x) / zoom,
-        // y: -(y - centerY - pan.y) / zoom  // Invert Y axis
-        x: (x - centerX ) / zoom,
-        y: -(y - centerY) / zoom  // Invert Y axis
+        x: (renderedX),
+        y: (renderedY)
     };
 }
 
@@ -529,6 +521,89 @@ cy.on('cxttap', 'node', function(evt) {
     }, 100);
 });
 
+// Handle right-click on canvas background using Cytoscape's cxttap event
+cy.on('cxttap', function(evt) {
+    // Only handle if clicking on background (not on a node or edge)
+    if (evt.target === cy) {
+        // Cancel linking mode if active
+        if (linkingMode) {
+            cancelLinking();
+        }
+        // Cancel resizing mode if active
+        if (resizingMode) {
+            cancelResizing();
+        }
+        
+        // Get the original event to access mouse coordinates for input box positioning
+        var originalEvent = evt.originalEvent || evt.cyEvent || evt;
+        var screenX = originalEvent.clientX || originalEvent.pageX;
+        var screenY = originalEvent.clientY || originalEvent.pageY;
+        
+        // Store click position (screen coordinates) for input box
+        clickPosition = { x: screenX, y: screenY };
+
+        graphPosition = screenToGraph(screenX, screenY);
+        
+        // Remove existing input box if any
+        if (textInputBox) {
+            textInputBox.remove();
+            textInputBox = null;
+        }
+        
+        // Create input text box at mouse position
+        textInputBox = document.createElement('input');
+        textInputBox.type = 'text';
+        textInputBox.style.left = clickPosition.x + 'px';
+        textInputBox.style.top = clickPosition.y + 'px';
+        textInputBox.style.transform = 'translate(-50%, -50%)';
+        textInputBox.value = '';
+        styleInputBox(textInputBox);
+        
+        document.body.appendChild(textInputBox);
+        textInputBox.focus();
+        
+        // Handle Enter key to create node or close if empty
+        textInputBox.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                var newLabel = textInputBox.value.trim();
+                
+                if (newLabel && textInputBox && graphPosition) {
+                    // Create new box node at the last mouse position (where user right-clicked)
+                    var nodeId = 'node_' + (++nodeIdCounter);
+                    cy.add({
+                        data: { id: nodeId, label: newLabel },
+                        renderedPosition: { x: graphPosition.x, y: graphPosition.y }
+                    });
+                }
+                
+                // Remove input box
+                textInputBox.remove();
+                textInputBox = null;
+                clickPosition = null;
+                graphPosition = null;
+            } else if (e.key === 'Escape') {
+                // Cancel on Escape
+                textInputBox.remove();
+                textInputBox = null;
+                clickPosition = null;
+                graphPosition = null;
+            }
+        });
+        
+        // Close on blur (click outside)
+        textInputBox.addEventListener('blur', function() {
+            setTimeout(function() {
+                if (textInputBox) {
+                    textInputBox.remove();
+                    textInputBox = null;
+                    clickPosition = null;
+                    graphPosition = null;
+                }
+            }, 200);
+        });
+    }
+});
+
 // Handle right-click on the canvas (only when not clicking on a node)
 container.addEventListener('contextmenu', function(e) {
     // Cancel linking mode if active
@@ -548,82 +623,8 @@ container.addEventListener('contextmenu', function(e) {
     
     e.preventDefault(); // Prevent default context menu
     
-    // Remove existing input box if any
-    if (textInputBox) {
-        textInputBox.remove();
-        textInputBox = null;
-    }
-    
-    // Store click position (screen coordinates)
-    clickPosition = { x: e.clientX, y: e.clientY };
-    
-    // Convert to graph coordinates
-    graphPosition = screenToGraph(e.clientX, e.clientY);
-    
-    // Create input text box at mouse position
-    textInputBox = document.createElement('input');
-    textInputBox.type = 'text';
-    textInputBox.style.left = clickPosition.x + 'px';
-    textInputBox.style.top = clickPosition.y + 'px';
-    textInputBox.style.transform = 'translate(-50%, -50%)';
-    textInputBox.value = '';
-    styleInputBox(textInputBox);
-    
-    document.body.appendChild(textInputBox);
-    textInputBox.focus();
-    
-    // Handle Enter key to create circle or close if empty
-    textInputBox.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') {
-            var newLabel = textInputBox.value.trim();
-            
-            if (newLabel && textInputBox) {
-                // Get the textbox's current position on screen
-                var textboxRect = textInputBox.getBoundingClientRect();
-                var textboxCenterX = textboxRect.left + textboxRect.width / 2;
-                var textboxCenterY = textboxRect.top + textboxRect.height / 2;
-                
-                // Convert textbox position to graph coordinates
-                var textboxGraphPosition = screenToGraph(textboxCenterX, textboxCenterY);
-                
-                // Create new box node at the textbox position
-                var nodeId = 'node_' + (++nodeIdCounter);
-                var newNode = cy.add({
-                    data: { id: nodeId, label: newLabel },
-                    //renderedPosition: { x: textboxGraphPosition.x, y: textboxGraphPosition.y },
-                    positions: { x: textboxGraphPosition.x, y: textboxGraphPosition.y },
-                    locked: false
-                });
-                
-                // Force position update (in case layout tries to move it)
-                //newNode.position({ x: textboxGraphPosition.x, y: textboxGraphPosition.y });
-            }
-            
-            // Remove input box
-            textInputBox.remove();
-            textInputBox = null;
-            clickPosition = null;
-            graphPosition = null;
-        } else if (e.key === 'Escape') {
-            // Cancel on Escape
-            textInputBox.remove();
-            textInputBox = null;
-            clickPosition = null;
-            graphPosition = null;
-        }
-    });
-    
-    // Close on blur (click outside)
-    textInputBox.addEventListener('blur', function() {
-        setTimeout(function() {
-            if (textInputBox) {
-                textInputBox.remove();
-                textInputBox = null;
-                clickPosition = null;
-                graphPosition = null;
-            }
-        }, 200);
-    });
+    // Note: The actual node creation is now handled by Cytoscape's cxttap event above
+    // This handler is kept for preventing default context menu
 });
 
 // Close context menu when clicking elsewhere
