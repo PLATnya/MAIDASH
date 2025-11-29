@@ -4,6 +4,9 @@ from pydantic import BaseModel
 from pathlib import Path
 import shutil
 import os
+import uvicorn
+import json
+from datetime import datetime
 
 app = FastAPI()
 
@@ -12,6 +15,30 @@ frontend_dir = Path(__file__).parent.parent / "frontend"
 # Get the data directory path for storing uploaded files
 data_dir = Path(__file__).parent.parent.parent / "data"
 data_dir.mkdir(exist_ok=True)
+
+# Path to the JSON file that tracks uploaded files
+files_json_path = data_dir / "files.json"
+
+def load_files_json():
+    """Load the files JSON, creating it with empty array if it doesn't exist"""
+    if not files_json_path.exists():
+        with open(files_json_path, 'w') as f:
+            json.dump([], f)
+        return []
+    
+    try:
+        with open(files_json_path, 'r') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        # If file is corrupted, create a new one
+        with open(files_json_path, 'w') as f:
+            json.dump([], f)
+        return []
+
+def save_files_json(files_list):
+    """Save the files list to JSON"""
+    with open(files_json_path, 'w') as f:
+        json.dump(files_list, f, indent=2)
 
 # Request model for file deletion
 class DeleteFileRequest(BaseModel):
@@ -36,6 +63,31 @@ async def upload_file(file: UploadFile = File(...)):
         # Write file to disk
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
+        
+        # Get file metadata
+        file_size = file_path.stat().st_size
+        upload_date = datetime.now().isoformat()
+        
+        # Create file entry
+        file_entry = {
+            "filename": file_path.name,
+            "original_filename": file.filename,
+            "path": str(file_path),
+            "size": file_size,
+            "size_mb": round(file_size / (1024 * 1024), 2),
+            "upload_date": upload_date,
+            "file_type": file_path.suffix.lower(),
+            "content_type": file.content_type or "application/octet-stream"
+        }
+        
+        # Load existing files list
+        files_list = load_files_json()
+        
+        # Add new file entry
+        files_list.append(file_entry)
+        
+        # Save updated files list
+        save_files_json(files_list)
         
         return JSONResponse({
             "message": "File uploaded successfully",
@@ -69,6 +121,11 @@ async def delete_file(request: DeleteFileRequest):
         
         # Delete the file
         file_path.unlink()
+        
+        # Remove file entry from JSON
+        files_list = load_files_json()
+        files_list = [f for f in files_list if f.get("filename") != filename]
+        save_files_json(files_list)
         
         return JSONResponse({
             "message": "File deleted successfully",
@@ -106,6 +163,5 @@ async def serve_static_files(file_path: str):
         raise HTTPException(status_code=404, detail="File not found")
 
 if __name__ == "__main__":
-    import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
