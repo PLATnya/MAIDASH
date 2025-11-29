@@ -7,12 +7,12 @@ var cy = cytoscape({
     style: [{
         selector: 'node',
         style: {
-            'width': 100,
+            'width': 300,
             'height': 100,
             'shape': 'rectangle',
-            'background-color': '#3498db',
+            'background-color': 'grey',
             'border-width': 2,
-            'border-color': '#2980b9',
+            'border-color': 'black',
             'label': 'data(label)',
             'text-valign': 'center',
             'text-halign': 'center',
@@ -39,6 +39,14 @@ var cy = cytoscape({
         style: {
             'border-color': '#27ae60',
             'border-width': 3
+        }
+    }, {
+        selector: 'node.selected',
+        style: {
+            'border-color': '#f39c12',
+            'border-width': 4,
+            'background-color': '#f1c40f',
+            'border-opacity': 1
         }
     }]
 });
@@ -122,12 +130,40 @@ function styleInputBox(inputBox) {
     });
 }
 
+// Function to deselect all nodes
+function deselectAllNodes() {
+    cy.nodes().removeClass('selected');
+    selectedNode = null;
+}
+
+// Function to select a node
+function selectNode(node) {
+    // Deselect all nodes first
+    deselectAllNodes();
+    // Select the new node
+    node.addClass('selected');
+    selectedNode = node;
+}
+
+// Function to focus on a node (zoom and pan to center it)
+function focusOnNode(node) {
+    if (!node) return;
+    
+    // Animate to center the node in the viewport
+    cy.animate({
+        center: { eles: node },
+        zoom: Math.max(cy.zoom(), 1.5), // Zoom in, but at least 1.5x
+        duration: 300
+    });
+}
+
 // Function to remove context menu
 function removeContextMenu() {
     if (contextMenu) {
         contextMenu.remove();
         contextMenu = null;
-        selectedNode = null;
+        // Don't deselect nodes when closing context menu
+        // selectedNode = null;
         selectedEdge = null;
         isNodeRightClick = false;
         isEdgeRightClick = false;
@@ -139,7 +175,8 @@ function createContextMenu(x, y, node) {
     // Remove existing context menu if any
     removeContextMenu();
     
-    selectedNode = node;
+    // Select the node when showing context menu
+    selectNode(node);
     
     // Create context menu container
     contextMenu = document.createElement('div');
@@ -430,14 +467,14 @@ function createEdge(sourceNode, targetNode) {
     });
 }
 
-// Handle click on nodes (for linking mode)
+// Handle click on nodes (for linking mode and selection)
 cy.on('tap', 'node', function(evt) {
+    var clickedNode = evt.target;
+    
     if (linkingMode && sourceNodeForLink) {
-        var targetNode = evt.target;
-        
         // Don't create edge if clicking on the same node
-        if (sourceNodeForLink.id() !== targetNode.id()) {
-            createEdge(sourceNodeForLink, targetNode);
+        if (sourceNodeForLink.id() !== clickedNode.id()) {
+            createEdge(sourceNodeForLink, clickedNode);
         }
         
         // Exit linking mode
@@ -448,9 +485,25 @@ cy.on('tap', 'node', function(evt) {
     if (resizingMode) {
         cancelResizing();
     }
+    
+    // Select the clicked node (unless we're in linking mode)
+    if (!linkingMode) {
+        selectNode(clickedNode);
+    }
 });
 
-// Handle click on canvas background (to cancel linking mode)
+// Handle double-click on nodes (focus/zoom to node)
+cy.on('dbltap', 'node', function(evt) {
+    var clickedNode = evt.target;
+    
+    // Select the node first
+    selectNode(clickedNode);
+    
+    // Focus on the node (zoom and center)
+    focusOnNode(clickedNode);
+});
+
+// Handle click on canvas background (to cancel linking mode and deselect nodes)
 cy.on('tap', function(evt) {
     // If clicking on background (not on a node) and in linking mode, cancel it
     if (linkingMode && evt.target === cy) {
@@ -459,6 +512,10 @@ cy.on('tap', function(evt) {
     // Cancel resizing if clicking on background
     if (resizingMode && evt.target === cy) {
         cancelResizing();
+    }
+    // Deselect nodes when clicking on background
+    if (evt.target === cy) {
+        deselectAllNodes();
     }
 });
 
