@@ -279,7 +279,12 @@ function getLinkedNodes(node) {
     return linkedNodes;
 }
 
-// Function to send text node info to API
+// Function to check if a node is a text node (not a file node)
+function isTextNode(node) {
+    return node.data('type') !== 'file' && node.data('editable') !== false;
+}
+
+// Function to send text node info to API (create)
 function saveTextNodeToAPI(nodeId, label, linkedNodes) {
     var payload = {
         node_id: nodeId,
@@ -305,6 +310,77 @@ function saveTextNodeToAPI(nodeId, label, linkedNodes) {
     })
     .catch(function(error) {
         console.error('Error saving text node:', error);
+    });
+}
+
+// Function to update text node info in API
+function updateTextNodeInAPI(nodeId, label, linkedNodes) {
+    var payload = {
+        node_id: nodeId,
+        label: label,
+        linked_nodes: linkedNodes
+    };
+    
+    fetch('/api/text-node', {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+    })
+    .then(function(response) {
+        if (!response.ok) {
+            throw new Error('Failed to update text node: ' + response.statusText);
+        }
+        return response.json();
+    })
+    .then(function(data) {
+        console.log('Text node updated successfully:', data);
+    })
+    .catch(function(error) {
+        console.error('Error updating text node:', error);
+    });
+}
+
+// Function to delete text node from API
+function deleteTextNodeFromAPI(nodeId) {
+    fetch('/api/text-node/' + encodeURIComponent(nodeId), {
+        method: 'DELETE',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(function(response) {
+        if (!response.ok) {
+            throw new Error('Failed to delete text node: ' + response.statusText);
+        }
+        return response.json();
+    })
+    .then(function(data) {
+        console.log('Text node deleted successfully:', data);
+    })
+    .catch(function(error) {
+        console.error('Error deleting text node:', error);
+    });
+}
+
+// Function to update text node info for a given node
+function syncTextNodeToAPI(node) {
+    if (!isTextNode(node)) {
+        return; // Only sync text nodes, not file nodes
+    }
+    
+    var nodeId = node.id();
+    var label = node.data('label') || '';
+    var linkedNodes = getLinkedNodes(node);
+    
+    updateTextNodeInAPI(nodeId, label, linkedNodes);
+}
+
+// Function to update text node info for multiple nodes
+function syncTextNodesToAPI(nodes) {
+    nodes.forEach(function(node) {
+        syncTextNodeToAPI(node);
     });
 }
 
@@ -486,6 +562,8 @@ function editNode(node) {
             var newLabel = textInputBox.value.trim();
             if (newLabel) {
                 node.data('label', newLabel);
+                // Update node in API after label change
+                syncTextNodeToAPI(node);
             }
             textInputBox.remove();
             textInputBox = null;
@@ -508,6 +586,23 @@ function editNode(node) {
 
 // Function to delete node
 function deleteNode(node) {
+    var nodeId = node.id();
+    var isTextNodeType = isTextNode(node);
+    
+    // If it's a text node, get all nodes that are linked to it before deletion
+    var linkedNodes = [];
+    if (isTextNodeType) {
+        var connectedEdges = node.connectedEdges();
+        connectedEdges.forEach(function(edge) {
+            var sourceNode = edge.source();
+            var targetNode = edge.target();
+            var linkedNode = (sourceNode.id() === nodeId) ? targetNode : sourceNode;
+            if (isTextNode(linkedNode)) {
+                linkedNodes.push(linkedNode);
+            }
+        });
+    }
+    
     // Check if it's a file node and delete the file from storage
     if (node.data('type') === 'file') {
         var fileName = node.data('fileName') || node.data('label');
@@ -534,10 +629,20 @@ function deleteNode(node) {
             console.error('Error deleting file from storage:', error);
             // Continue with node deletion even if file deletion fails
         });
+    } else if (isTextNodeType) {
+        // Delete text node from API
+        deleteTextNodeFromAPI(nodeId);
     }
     
     // Remove the node from the graph
     cy.remove(node);
+    
+    // Update all linked nodes in API (they need to remove this node from their linked_nodes)
+    if (linkedNodes.length > 0) {
+        setTimeout(function() {
+            syncTextNodesToAPI(linkedNodes);
+        }, 100);
+    }
 }
 
 // Function to edit edge
@@ -578,6 +683,14 @@ function editEdge(edge) {
             var newLabel = textInputBox.value.trim();
             // Allow empty labels for edges
             edge.data('label', newLabel);
+            
+            // Update both connected nodes in API after edge label change
+            var sourceNode = edge.source();
+            var targetNode = edge.target();
+            setTimeout(function() {
+                syncTextNodesToAPI([sourceNode, targetNode]);
+            }, 100);
+            
             textInputBox.remove();
             textInputBox = null;
         } else if (e.key === 'Escape') {
@@ -599,7 +712,17 @@ function editEdge(edge) {
 
 // Function to delete edge
 function deleteEdge(edge) {
+    // Get nodes before deletion
+    var sourceNode = edge.source();
+    var targetNode = edge.target();
+    
+    // Remove the edge from the graph
     cy.remove(edge);
+    
+    // Update both nodes in API after edge is deleted
+    setTimeout(function() {
+        syncTextNodesToAPI([sourceNode, targetNode]);
+    }, 100);
 }
 
 // Function to start resizing a node
@@ -779,6 +902,11 @@ function createEdge(sourceNode, targetNode) {
             label: '' // Initialize with empty label
         }
     });
+    
+    // Update both nodes in API after edge is created
+    setTimeout(function() {
+        syncTextNodesToAPI([sourceNode, targetNode]);
+    }, 100);
 }
 
 // Handle click on nodes (for linking mode and selection)
@@ -1029,12 +1157,14 @@ cy.on('cxttap', function(evt) {
                         renderedPosition: { x: graphPosition.x, y: graphPosition.y }
                     });
                     
-                    // Get linked nodes and send to API
+                    // Get linked nodes and send to API (only for text nodes)
                     // Use setTimeout to ensure the node is fully added to the graph first
-                    setTimeout(function() {
-                        var linkedNodes = getLinkedNodes(newNode);
-                        saveTextNodeToAPI(nodeId, newLabel, linkedNodes);
-                    }, 100);
+                    if (isTextNode(newNode)) {
+                        setTimeout(function() {
+                            var linkedNodes = getLinkedNodes(newNode);
+                            saveTextNodeToAPI(nodeId, newLabel, linkedNodes);
+                        }, 100);
+                    }
                 }
                 
                 // Remove input box

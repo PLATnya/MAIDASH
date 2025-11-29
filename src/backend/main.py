@@ -173,6 +173,11 @@ async def create_text_node(request: TextNodeRequest):
         # Load existing data structure
         data = load_files_json()
         
+        # Check if node already exists
+        existing_index = next((i for i, node in enumerate(data["texts"]) if node.get("node_id") == request.node_id), None)
+        if existing_index is not None:
+            raise HTTPException(status_code=400, detail=f"Text node with id {request.node_id} already exists. Use PUT to update.")
+        
         # Create text node entry
         text_node_entry = {
             "node_id": request.node_id,
@@ -197,8 +202,97 @@ async def create_text_node(request: TextNodeRequest):
             "message": "Text node saved successfully",
             "node_id": request.node_id
         })
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error saving text node: {str(e)}")
+
+@app.put("/api/text-node")
+async def update_text_node(request: TextNodeRequest):
+    """Update text node information in data.json"""
+    try:
+        # Load existing data structure
+        data = load_files_json()
+        
+        # Find the node to update
+        node_index = next((i for i, node in enumerate(data["texts"]) if node.get("node_id") == request.node_id), None)
+        
+        if node_index is None:
+            # Node doesn't exist, create it instead
+            text_node_entry = {
+                "node_id": request.node_id,
+                "label": request.label,
+                "linked_nodes": [
+                    {
+                        "node_id": linked.node_id,
+                        "linkage_label": linked.linkage_label
+                    }
+                    for linked in request.linked_nodes
+                ],
+                "created_date": datetime.now().isoformat()
+            }
+            data["texts"].append(text_node_entry)
+        else:
+            # Update existing node
+            existing_node = data["texts"][node_index]
+            data["texts"][node_index] = {
+                "node_id": request.node_id,
+                "label": request.label,
+                "linked_nodes": [
+                    {
+                        "node_id": linked.node_id,
+                        "linkage_label": linked.linkage_label
+                    }
+                    for linked in request.linked_nodes
+                ],
+                "created_date": existing_node.get("created_date", datetime.now().isoformat()),
+                "updated_date": datetime.now().isoformat()
+            }
+        
+        # Save updated data structure
+        save_files_json(data)
+        
+        return JSONResponse({
+            "message": "Text node updated successfully",
+            "node_id": request.node_id
+        })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating text node: {str(e)}")
+
+@app.delete("/api/text-node/{node_id}")
+async def delete_text_node(node_id: str):
+    """Delete text node information from data.json"""
+    try:
+        # Load existing data structure
+        data = load_files_json()
+        
+        # Remove the node from texts array
+        initial_length = len(data["texts"])
+        data["texts"] = [node for node in data["texts"] if node.get("node_id") != node_id]
+        
+        # Also remove references to this node from other nodes' linked_nodes
+        for node in data["texts"]:
+            if "linked_nodes" in node:
+                node["linked_nodes"] = [
+                    linked for linked in node["linked_nodes"]
+                    if linked.get("node_id") != node_id
+                ]
+        
+        # Save updated data structure
+        save_files_json(data)
+        
+        if len(data["texts"]) < initial_length:
+            return JSONResponse({
+                "message": "Text node deleted successfully",
+                "node_id": node_id
+            })
+        else:
+            return JSONResponse({
+                "message": "Text node not found (may have been already deleted)",
+                "node_id": node_id
+            })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting text node: {str(e)}")
 
 @app.get("/")
 async def read_root():
