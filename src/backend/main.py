@@ -7,6 +7,7 @@ import os
 import uvicorn
 import json
 from datetime import datetime
+from typing import List
 
 app = FastAPI()
 
@@ -62,6 +63,16 @@ def save_files_json(data):
 # Request model for file deletion
 class DeleteFileRequest(BaseModel):
     filename: str
+
+# Request model for text node creation
+class LinkedNode(BaseModel):
+    node_id: str
+    linkage_label: str
+
+class TextNodeRequest(BaseModel):
+    node_id: str
+    label: str
+    linked_nodes: List[LinkedNode] = []
 
 # API routes must be defined before the catch-all route
 @app.post("/api/upload")
@@ -154,6 +165,40 @@ async def delete_file(request: DeleteFileRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error deleting file: {str(e)}")
+
+@app.post("/api/text-node")
+async def create_text_node(request: TextNodeRequest):
+    """Save text node information to data.json"""
+    try:
+        # Load existing data structure
+        data = load_files_json()
+        
+        # Create text node entry
+        text_node_entry = {
+            "node_id": request.node_id,
+            "label": request.label,
+            "linked_nodes": [
+                {
+                    "node_id": linked.node_id,
+                    "linkage_label": linked.linkage_label
+                }
+                for linked in request.linked_nodes
+            ],
+            "created_date": datetime.now().isoformat()
+        }
+        
+        # Add new text node entry to texts array
+        data["texts"].append(text_node_entry)
+        
+        # Save updated data structure
+        save_files_json(data)
+        
+        return JSONResponse({
+            "message": "Text node saved successfully",
+            "node_id": request.node_id
+        })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error saving text node: {str(e)}")
 
 @app.get("/")
 async def read_root():

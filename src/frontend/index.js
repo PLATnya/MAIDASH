@@ -250,6 +250,64 @@ function createFileNode(fileName, position, actualFileName) {
     return newNode;
 }
 
+// Function to get linked nodes for a given node
+function getLinkedNodes(node) {
+    var linkedNodes = [];
+    
+    // Get all edges connected to this node
+    var connectedEdges = node.connectedEdges();
+    
+    connectedEdges.forEach(function(edge) {
+        var sourceNode = edge.source();
+        var targetNode = edge.target();
+        var linkageLabel = edge.data('label') || '';
+        
+        // Determine which node is the linked one (not the current node)
+        var linkedNode;
+        if (sourceNode.id() === node.id()) {
+            linkedNode = targetNode;
+        } else {
+            linkedNode = sourceNode;
+        }
+        
+        linkedNodes.push({
+            node_id: linkedNode.id(),
+            linkage_label: linkageLabel
+        });
+    });
+    
+    return linkedNodes;
+}
+
+// Function to send text node info to API
+function saveTextNodeToAPI(nodeId, label, linkedNodes) {
+    var payload = {
+        node_id: nodeId,
+        label: label,
+        linked_nodes: linkedNodes
+    };
+    
+    fetch('/api/text-node', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+    })
+    .then(function(response) {
+        if (!response.ok) {
+            throw new Error('Failed to save text node: ' + response.statusText);
+        }
+        return response.json();
+    })
+    .then(function(data) {
+        console.log('Text node saved successfully:', data);
+    })
+    .catch(function(error) {
+        console.error('Error saving text node:', error);
+    });
+}
+
 // Function to upload file to database
 function uploadFileToDB(file) {
     var formData = new FormData();
@@ -962,7 +1020,7 @@ cy.on('cxttap', function(evt) {
                 if (newLabel && textInputBox && graphPosition) {
                     // Create new box node at the last mouse position (where user right-clicked)
                     var nodeId = 'node_' + (++nodeIdCounter);
-                    cy.add({
+                    var newNode = cy.add({
                         data: { 
                             id: nodeId, 
                             label: newLabel,
@@ -970,6 +1028,13 @@ cy.on('cxttap', function(evt) {
                         },
                         renderedPosition: { x: graphPosition.x, y: graphPosition.y }
                     });
+                    
+                    // Get linked nodes and send to API
+                    // Use setTimeout to ensure the node is fully added to the graph first
+                    setTimeout(function() {
+                        var linkedNodes = getLinkedNodes(newNode);
+                        saveTextNodeToAPI(nodeId, newLabel, linkedNodes);
+                    }, 100);
                 }
                 
                 // Remove input box
