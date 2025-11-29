@@ -26,7 +26,14 @@ var cy = cytoscape({
             'width': 2,
             'line-color': '#666',
             'curve-style': 'bezier',
-            'target-arrow-shape': 'none'
+            'target-arrow-shape': 'none',
+            'label': 'data(label)',
+            'font-size': '12px',
+            'text-rotation': 'autorotate',
+            'text-margin-y': -10,
+            'color': '#333',
+            'text-outline-width': 2,
+            'text-outline-color': '#ffffff'
         }
     }, {
         selector: 'node.linking-source',
@@ -285,6 +292,63 @@ function deleteNode(node) {
     cy.remove(node);
 }
 
+// Function to edit edge
+function editEdge(edge) {
+    var currentLabel = edge.data('label') || '';
+    
+    // Remove existing input box if any
+    if (textInputBox) {
+        textInputBox.remove();
+        textInputBox = null;
+    }
+    
+    // Get edge midpoint position on screen
+    var sourcePos = edge.source().renderedPosition();
+    var targetPos = edge.target().renderedPosition();
+    var midX = (sourcePos.x + targetPos.x) / 2;
+    var midY = (sourcePos.y + targetPos.y) / 2;
+    var containerRect = container.getBoundingClientRect();
+    var screenX = containerRect.left + midX;
+    var screenY = containerRect.top + midY;
+    
+    // Create input text box at edge midpoint
+    textInputBox = document.createElement('input');
+    textInputBox.type = 'text';
+    textInputBox.style.left = screenX + 'px';
+    textInputBox.style.top = screenY + 'px';
+    textInputBox.style.transform = 'translate(-50%, -50%)';
+    textInputBox.value = currentLabel;
+    styleInputBox(textInputBox);
+    
+    document.body.appendChild(textInputBox);
+    textInputBox.focus();
+    textInputBox.select();
+    
+    // Handle Enter key to update edge label
+    textInputBox.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            var newLabel = textInputBox.value.trim();
+            // Allow empty labels for edges
+            edge.data('label', newLabel);
+            textInputBox.remove();
+            textInputBox = null;
+        } else if (e.key === 'Escape') {
+            textInputBox.remove();
+            textInputBox = null;
+        }
+    });
+    
+    // Close on blur
+    textInputBox.addEventListener('blur', function() {
+        setTimeout(function() {
+            if (textInputBox) {
+                textInputBox.remove();
+                textInputBox = null;
+            }
+        }, 200);
+    });
+}
+
 // Function to delete edge
 function deleteEdge(edge) {
     cy.remove(edge);
@@ -383,6 +447,7 @@ function createEdgeContextMenu(x, y, edge) {
     
     // Create menu items
     var menuItems = [
+        { label: 'Edit', action: function() { editEdge(edge); } },
         { label: 'Delete', action: function() { deleteEdge(edge); } }
     ];
     
@@ -462,7 +527,8 @@ function createEdge(sourceNode, targetNode) {
         data: {
             id: edgeId,
             source: sourceNode.id(),
-            target: targetNode.id()
+            target: targetNode.id(),
+            label: '' // Initialize with empty label
         }
     });
 }
