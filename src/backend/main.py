@@ -17,28 +17,47 @@ data_dir = Path(__file__).parent.parent.parent / "data"
 data_dir.mkdir(exist_ok=True)
 
 # Path to the JSON file that tracks uploaded files
-files_json_path = data_dir / "files.json"
+files_json_path = data_dir / "data.json"
 
 def load_files_json():
-    """Load the files JSON, creating it with empty array if it doesn't exist"""
+    """Load the files JSON, creating it with proper structure if it doesn't exist"""
+    default_structure = {
+        "texts": [],
+        "files": []
+    }
+    
     if not files_json_path.exists():
         with open(files_json_path, 'w') as f:
-            json.dump([], f)
-        return []
+            json.dump(default_structure, f, indent=2)
+        return default_structure
     
     try:
         with open(files_json_path, 'r') as f:
-            return json.load(f)
+            data = json.load(f)
+            # Ensure the structure has both keys (migration from old format)
+            if not isinstance(data, dict):
+                # Old format was an array, convert it
+                data = {
+                    "texts": [],
+                    "files": data if isinstance(data, list) else []
+                }
+            else:
+                # Ensure both keys exist
+                if "texts" not in data:
+                    data["texts"] = []
+                if "files" not in data:
+                    data["files"] = []
+            return data
     except (json.JSONDecodeError, IOError):
         # If file is corrupted, create a new one
         with open(files_json_path, 'w') as f:
-            json.dump([], f)
-        return []
+            json.dump(default_structure, f, indent=2)
+        return default_structure
 
-def save_files_json(files_list):
-    """Save the files list to JSON"""
+def save_files_json(data):
+    """Save the data structure to JSON"""
     with open(files_json_path, 'w') as f:
-        json.dump(files_list, f, indent=2)
+        json.dump(data, f, indent=2)
 
 # Request model for file deletion
 class DeleteFileRequest(BaseModel):
@@ -80,14 +99,14 @@ async def upload_file(file: UploadFile = File(...)):
             "content_type": file.content_type or "application/octet-stream"
         }
         
-        # Load existing files list
-        files_list = load_files_json()
+        # Load existing data structure
+        data = load_files_json()
         
-        # Add new file entry
-        files_list.append(file_entry)
+        # Add new file entry to files array
+        data["files"].append(file_entry)
         
-        # Save updated files list
-        save_files_json(files_list)
+        # Save updated data structure
+        save_files_json(data)
         
         return JSONResponse({
             "message": "File uploaded successfully",
@@ -123,9 +142,9 @@ async def delete_file(request: DeleteFileRequest):
         file_path.unlink()
         
         # Remove file entry from JSON
-        files_list = load_files_json()
-        files_list = [f for f in files_list if f.get("filename") != filename]
-        save_files_json(files_list)
+        data = load_files_json()
+        data["files"] = [f for f in data["files"] if f.get("filename") != filename]
+        save_files_json(data)
         
         return JSONResponse({
             "message": "File deleted successfully",
