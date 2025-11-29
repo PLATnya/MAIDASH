@@ -55,6 +55,13 @@ var cy = cytoscape({
             'background-color': '#f1c40f',
             'border-opacity': 1
         }
+    }, {
+        selector: 'node.uneditable',
+        style: {
+            'background-color': '#95a5a6',
+            'border-color': '#7f8c8d',
+            'opacity': 0.8
+        }
     }]
 });
 
@@ -71,6 +78,7 @@ var sourceNodeForLink = null;
 
 // Variable to store the current input box and click position
 var textInputBox = null;
+var commandInputBox = null;
 var clickPosition = null;
 var graphPosition = null;
 var mousePosition = null;
@@ -137,6 +145,141 @@ function styleInputBox(inputBox) {
     });
 }
 
+// Function to style command input box (wide version)
+function styleCommandInputBox(inputBox) {
+    inputBox.style.position = 'absolute';
+    inputBox.style.padding = '12px 16px';
+    inputBox.style.fontSize = '15px';
+    inputBox.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+    inputBox.style.border = '2px solid #9b59b6';
+    inputBox.style.borderRadius = '8px';
+    inputBox.style.zIndex = '1000';
+    inputBox.style.outline = 'none';
+    inputBox.style.backgroundColor = '#ffffff';
+    inputBox.style.color = '#2c3e50';
+    inputBox.style.boxShadow = '0 4px 12px rgba(155, 89, 182, 0.3), 0 2px 4px rgba(0, 0, 0, 0.1)';
+    inputBox.style.transition = 'all 0.2s ease';
+    inputBox.style.minWidth = '500px';
+    inputBox.style.maxWidth = '800px';
+    inputBox.style.width = '600px';
+    inputBox.setAttribute('placeholder', 'Type command (e.g., /load)');
+    
+    // Store base transform (should be set before calling this function)
+    var baseTransform = inputBox.style.transform || 'translate(-50%, -50%)';
+    inputBox.dataset.baseTransform = baseTransform;
+    
+    // Add focus styles
+    inputBox.addEventListener('focus', function() {
+        this.style.borderColor = '#8e44ad';
+        this.style.boxShadow = '0 6px 16px rgba(155, 89, 182, 0.4), 0 2px 6px rgba(0, 0, 0, 0.15)';
+        var base = this.dataset.baseTransform || 'translate(-50%, -50%)';
+        this.style.transform = base + ' scale(1.02)';
+    });
+    
+    inputBox.addEventListener('blur', function() {
+        this.style.borderColor = '#9b59b6';
+        this.style.boxShadow = '0 4px 12px rgba(155, 89, 182, 0.3), 0 2px 4px rgba(0, 0, 0, 0.1)';
+        var base = this.dataset.baseTransform || 'translate(-50%, -50%)';
+        this.style.transform = base;
+    });
+}
+
+// Function to handle commands
+function handleCommand(command) {
+    command = command.trim();
+    
+    if (command === '/load') {
+        // Create a hidden file input element
+        var fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.style.display = 'none';
+        fileInput.accept = '*/*'; // Accept all file types, or specify like '.txt,.pdf,.docx'
+        
+        fileInput.addEventListener('change', function(e) {
+            var file = e.target.files[0];
+            if (file) {
+                uploadFileToDB(file);
+            }
+            // Clean up
+            document.body.removeChild(fileInput);
+        });
+        
+        document.body.appendChild(fileInput);
+        fileInput.click();
+    } else if (command.startsWith('/')) {
+        console.log('Unknown command:', command);
+        alert('Unknown command: ' + command);
+    }
+}
+
+// Function to create an uneditable file node
+function createFileNode(fileName, position) {
+    var nodeId = 'file_' + (++nodeIdCounter);
+    
+    // If no position provided, use center of viewport
+    var nodePosition;
+    if (position && position.x !== undefined && position.y !== undefined) {
+        nodePosition = position;
+    } else {
+        // Get center of viewport in graph coordinates
+        var containerRect = container.getBoundingClientRect();
+        var centerScreenX = containerRect.left + containerRect.width / 2;
+        var centerScreenY = containerRect.top + containerRect.height / 2;
+        
+        // Convert screen coordinates to graph coordinates
+        var graphPos = screenToGraph(centerScreenX, centerScreenY);
+        nodePosition = graphPos;
+    }
+    
+    // Create node with uneditable class
+    var newNode = cy.add({
+        data: { 
+            id: nodeId, 
+            label: fileName,
+            editable: false,
+            type: 'file'
+        },
+        renderedPosition: { x: nodePosition.x, y: nodePosition.y },
+        classes: 'uneditable'
+    });
+    
+    return newNode;
+}
+
+// Function to upload file to database
+function uploadFileToDB(file) {
+    var formData = new FormData();
+    formData.append('file', file);
+    
+    fetch('/api/upload', {
+        method: 'POST',
+        body: formData
+    })
+    .then(function(response) {
+        if (!response.ok) {
+            throw new Error('Upload failed: ' + response.statusText);
+        }
+        return response.json();
+    })
+    .then(function(data) {
+        console.log('File uploaded successfully:', data);
+        
+        // Create uneditable node with file name
+        var fileNode = createFileNode(file.name);
+        
+        // Optionally focus on the new node
+        setTimeout(function() {
+            focusOnNode(fileNode);
+        }, 100);
+        
+        alert('File "' + file.name + '" uploaded successfully!');
+    })
+    .catch(function(error) {
+        console.error('Error uploading file:', error);
+        alert('Error uploading file: ' + error.message);
+    });
+}
+
 // Function to deselect all nodes
 function deselectAllNodes() {
     cy.nodes().removeClass('selected');
@@ -198,13 +341,19 @@ function createContextMenu(x, y, node) {
     contextMenu.style.minWidth = '150px';
     contextMenu.style.padding = '4px 0';
     
-    // Create menu items
-    var menuItems = [
-        { label: 'Edit', action: function() { editNode(node); } },
+    // Create menu items (conditionally show Edit for editable nodes)
+    var menuItems = [];
+    
+    // Only show Edit option if node is editable
+    if (node.data('editable') !== false && !node.hasClass('uneditable')) {
+        menuItems.push({ label: 'Edit', action: function() { editNode(node); } });
+    }
+    
+    menuItems.push(
         { label: 'Resize', action: function() { startResizing(node, 0, 0); } },
         { label: 'Link', action: function() { startLinking(node); } },
         { label: 'Delete', action: function() { deleteNode(node); } }
-    ];
+    );
     
     menuItems.forEach(function(item) {
         var menuItem = document.createElement('div');
@@ -234,6 +383,12 @@ function createContextMenu(x, y, node) {
 
 // Function to edit node
 function editNode(node) {
+    // Check if node is editable
+    if (node.data('editable') === false || node.hasClass('uneditable')) {
+        alert('This node cannot be edited.');
+        return;
+    }
+    
     var currentLabel = node.data('label') || '';
     
     // Remove existing input box if any
@@ -571,17 +726,96 @@ cy.on('dbltap', 'node', function(evt) {
 
 // Handle click on canvas background (to cancel linking mode and deselect nodes)
 cy.on('tap', function(evt) {
-    // If clicking on background (not on a node) and in linking mode, cancel it
-    if (linkingMode && evt.target === cy) {
-        cancelLinking();
-    }
-    // Cancel resizing if clicking on background
-    if (resizingMode && evt.target === cy) {
-        cancelResizing();
-    }
-    // Deselect nodes when clicking on background
+    // Only handle if clicking on background (not on a node or edge)
     if (evt.target === cy) {
+        // Check if it's a right-click by examining the original event
+        var originalEvent = evt.originalEvent || evt.cyEvent;
+        var isRightClick = false;
+        
+        if (originalEvent) {
+            // Check mouse button (0 = left, 2 = right)
+            if (originalEvent.button !== undefined && originalEvent.button === 2) {
+                isRightClick = true;
+            }
+            // Also check if it's a context menu event
+            if (originalEvent.type === 'contextmenu') {
+                isRightClick = true;
+            }
+        }
+        
+        // If clicking on background (not on a node) and in linking mode, cancel it
+        if (linkingMode) {
+            cancelLinking();
+        }
+        // Cancel resizing if clicking on background
+        if (resizingMode) {
+            cancelResizing();
+        }
+        // Deselect nodes when clicking on background
         deselectAllNodes();
+        
+        // Show command input box on left click only (not right click)
+        if (!isRightClick && !contextMenu) {
+            // Get click position
+            var screenX = originalEvent ? (originalEvent.clientX || originalEvent.pageX || 0) : 0;
+            var screenY = originalEvent ? (originalEvent.clientY || originalEvent.pageY || 0) : 0;
+            
+            // Use center of viewport if coordinates not available
+            if (!screenX || !screenY) {
+                var containerRect = container.getBoundingClientRect();
+                screenX = containerRect.left + containerRect.width / 2;
+                screenY = containerRect.top + containerRect.height / 2;
+            }
+            
+            // Remove existing command input box if any
+            if (commandInputBox) {
+                commandInputBox.remove();
+                commandInputBox = null;
+            }
+            
+            // Remove existing text input box if any
+            if (textInputBox) {
+                textInputBox.remove();
+                textInputBox = null;
+            }
+            
+            // Create command input box
+            commandInputBox = document.createElement('input');
+            commandInputBox.type = 'text';
+            commandInputBox.placeholder = 'Type command (e.g., /load)';
+            commandInputBox.style.left = screenX + 'px';
+            commandInputBox.style.top = screenY + 'px';
+            commandInputBox.style.transform = 'translate(-50%, -50%)';
+            styleCommandInputBox(commandInputBox);
+            
+            document.body.appendChild(commandInputBox);
+            commandInputBox.focus();
+            
+            // Handle Enter key to execute command
+            commandInputBox.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    var command = commandInputBox.value.trim();
+                    if (command) {
+                        handleCommand(command);
+                    }
+                    commandInputBox.remove();
+                    commandInputBox = null;
+                } else if (e.key === 'Escape') {
+                    commandInputBox.remove();
+                    commandInputBox = null;
+                }
+            });
+            
+            // Close on blur
+            commandInputBox.addEventListener('blur', function() {
+                setTimeout(function() {
+                    if (commandInputBox) {
+                        commandInputBox.remove();
+                        commandInputBox = null;
+                    }
+                }, 200);
+            });
+        }
     }
 });
 
@@ -694,7 +928,11 @@ cy.on('cxttap', function(evt) {
                     // Create new box node at the last mouse position (where user right-clicked)
                     var nodeId = 'node_' + (++nodeIdCounter);
                     cy.add({
-                        data: { id: nodeId, label: newLabel },
+                        data: { 
+                            id: nodeId, 
+                            label: newLabel,
+                            editable: true
+                        },
                         renderedPosition: { x: graphPosition.x, y: graphPosition.y }
                     });
                 }
@@ -750,17 +988,17 @@ container.addEventListener('contextmenu', function(e) {
     // This handler is kept for preventing default context menu
 });
 
-// Close context menu when clicking elsewhere
-document.addEventListener('click', function(e) {
-    if (contextMenu && !contextMenu.contains(e.target)) {
-        removeContextMenu();
-    }
-});
-
 // Handle mouse move for resizing
 container.addEventListener('mousemove', function(e) {
     if (resizingMode && nodeBeingResized) {
         resizeNode(e.clientX, e.clientY);
+    }
+});
+
+// Close context menu when clicking elsewhere
+document.addEventListener('click', function(e) {
+    if (contextMenu && !contextMenu.contains(e.target)) {
+        removeContextMenu();
     }
 });
 
