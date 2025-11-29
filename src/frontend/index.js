@@ -213,7 +213,7 @@ function handleCommand(command) {
 }
 
 // Function to create an uneditable file node
-function createFileNode(fileName, position) {
+function createFileNode(fileName, position, actualFileName) {
     var nodeId = 'file_' + (++nodeIdCounter);
     
     // If no position provided, use center of viewport
@@ -231,11 +231,15 @@ function createFileNode(fileName, position) {
         nodePosition = graphPos;
     }
     
+    // Use actualFileName if provided (for renamed files), otherwise use fileName
+    var storedFileName = actualFileName || fileName;
+    
     // Create node with uneditable class
     var newNode = cy.add({
         data: { 
             id: nodeId, 
-            label: fileName,
+            label: fileName, // Display name (original)
+            fileName: storedFileName, // Actual filename on disk
             editable: false,
             type: 'file'
         },
@@ -265,7 +269,9 @@ function uploadFileToDB(file) {
         console.log('File uploaded successfully:', data);
         
         // Create uneditable node with file name
-        var fileNode = createFileNode(file.name);
+        // Use the actual filename returned from server (may have suffix if renamed)
+        var actualFileName = data.filename || file.name;
+        var fileNode = createFileNode(file.name, null, actualFileName);
         
         // Optionally focus on the new node
         setTimeout(function() {
@@ -444,6 +450,35 @@ function editNode(node) {
 
 // Function to delete node
 function deleteNode(node) {
+    // Check if it's a file node and delete the file from storage
+    if (node.data('type') === 'file') {
+        var fileName = node.data('fileName') || node.data('label');
+        
+        // Delete file from backend
+        fetch('/api/delete', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ filename: fileName })
+        })
+        .then(function(response) {
+            if (!response.ok) {
+                console.warn('Failed to delete file from storage:', fileName);
+                // Continue with node deletion even if file deletion fails
+            }
+            return response.json();
+        })
+        .then(function(data) {
+            console.log('File deleted from storage:', fileName);
+        })
+        .catch(function(error) {
+            console.error('Error deleting file from storage:', error);
+            // Continue with node deletion even if file deletion fails
+        });
+    }
+    
+    // Remove the node from the graph
     cy.remove(node);
 }
 
