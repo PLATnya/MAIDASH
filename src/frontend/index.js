@@ -214,7 +214,7 @@ function handleCommand(command) {
 
 // Function to create an uneditable file node
 function createFileNode(fileName, position, actualFileName) {
-    var nodeId = 'file_' + (++nodeIdCounter);
+    var nodeId = 'node_' + (++nodeIdCounter);
     
     // If no position provided, use center of viewport
     var nodePosition;
@@ -246,6 +246,12 @@ function createFileNode(fileName, position, actualFileName) {
         renderedPosition: { x: nodePosition.x, y: nodePosition.y },
         classes: 'uneditable'
     });
+    
+    // Save file node info to API
+    setTimeout(function() {
+        var linkedNodes = getLinkedNodes(newNode);
+        saveFileNodeToAPI(nodeId, fileName, linkedNodes, storedFileName);
+    }, 100);
     
     return newNode;
 }
@@ -282,6 +288,11 @@ function getLinkedNodes(node) {
 // Function to check if a node is a text node (not a file node)
 function isTextNode(node) {
     return node.data('type') !== 'file' && node.data('editable') !== false;
+}
+
+// Function to check if a node is a file node
+function isFileNode(node) {
+    return node.data('type') === 'file';
 }
 
 // Function to send text node info to API (create)
@@ -381,6 +392,125 @@ function syncTextNodeToAPI(node) {
 function syncTextNodesToAPI(nodes) {
     nodes.forEach(function(node) {
         syncTextNodeToAPI(node);
+    });
+}
+
+// Function to send file node info to API (create)
+function saveFileNodeToAPI(nodeId, label, linkedNodes, filename) {
+    var payload = {
+        node_id: nodeId,
+        label: label,
+        linked_nodes: linkedNodes,
+        filename: filename
+    };
+    
+    fetch('/api/file-node', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+    })
+    .then(function(response) {
+        if (!response.ok) {
+            throw new Error('Failed to save file node: ' + response.statusText);
+        }
+        return response.json();
+    })
+    .then(function(data) {
+        console.log('File node saved successfully:', data);
+    })
+    .catch(function(error) {
+        console.error('Error saving file node:', error);
+    });
+}
+
+// Function to update file node info in API
+function updateFileNodeInAPI(nodeId, label, linkedNodes, filename) {
+    var payload = {
+        node_id: nodeId,
+        label: label,
+        linked_nodes: linkedNodes,
+        filename: filename
+    };
+    
+    fetch('/api/file-node', {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+    })
+    .then(function(response) {
+        if (!response.ok) {
+            throw new Error('Failed to update file node: ' + response.statusText);
+        }
+        return response.json();
+    })
+    .then(function(data) {
+        console.log('File node updated successfully:', data);
+    })
+    .catch(function(error) {
+        console.error('Error updating file node:', error);
+    });
+}
+
+// Function to delete file node from API
+function deleteFileNodeFromAPI(nodeId) {
+    fetch('/api/file-node/' + encodeURIComponent(nodeId), {
+        method: 'DELETE',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(function(response) {
+        if (!response.ok) {
+            throw new Error('Failed to delete file node: ' + response.statusText);
+        }
+        return response.json();
+    })
+    .then(function(data) {
+        console.log('File node deleted successfully:', data);
+    })
+    .catch(function(error) {
+        console.error('Error deleting file node:', error);
+    });
+}
+
+// Function to update file node info for a given node
+function syncFileNodeToAPI(node) {
+    if (!isFileNode(node)) {
+        return; // Only sync file nodes
+    }
+    
+    var nodeId = node.id();
+    var label = node.data('label') || '';
+    var filename = node.data('fileName') || '';
+    var linkedNodes = getLinkedNodes(node);
+    
+    updateFileNodeInAPI(nodeId, label, linkedNodes, filename);
+}
+
+// Function to update file node info for multiple nodes
+function syncFileNodesToAPI(nodes) {
+    nodes.forEach(function(node) {
+        syncFileNodeToAPI(node);
+    });
+}
+
+// Function to sync any node (text or file) to API
+function syncNodeToAPI(node) {
+    if (isTextNode(node)) {
+        syncTextNodeToAPI(node);
+    } else if (isFileNode(node)) {
+        syncFileNodeToAPI(node);
+    }
+}
+
+// Function to sync multiple nodes (text or file) to API
+function syncNodesToAPI(nodes) {
+    nodes.forEach(function(node) {
+        syncNodeToAPI(node);
     });
 }
 
@@ -563,7 +693,7 @@ function editNode(node) {
             if (newLabel) {
                 node.data('label', newLabel);
                 // Update node in API after label change
-                syncTextNodeToAPI(node);
+                syncNodeToAPI(node);
             }
             textInputBox.remove();
             textInputBox = null;
@@ -588,24 +718,28 @@ function editNode(node) {
 function deleteNode(node) {
     var nodeId = node.id();
     var isTextNodeType = isTextNode(node);
+    var isFileNodeType = isFileNode(node);
     
-    // If it's a text node, get all nodes that are linked to it before deletion
+    // Get all nodes that are linked to it before deletion (both text and file nodes)
     var linkedNodes = [];
-    if (isTextNodeType) {
+    if (isTextNodeType || isFileNodeType) {
         var connectedEdges = node.connectedEdges();
         connectedEdges.forEach(function(edge) {
             var sourceNode = edge.source();
             var targetNode = edge.target();
             var linkedNode = (sourceNode.id() === nodeId) ? targetNode : sourceNode;
-            if (isTextNode(linkedNode)) {
+            if (isTextNode(linkedNode) || isFileNode(linkedNode)) {
                 linkedNodes.push(linkedNode);
             }
         });
     }
     
     // Check if it's a file node and delete the file from storage
-    if (node.data('type') === 'file') {
+    if (isFileNodeType) {
         var fileName = node.data('fileName') || node.data('label');
+        
+        // Delete file node from API
+        deleteFileNodeFromAPI(nodeId);
         
         // Delete file from backend
         fetch('/api/delete', {
@@ -640,7 +774,7 @@ function deleteNode(node) {
     // Update all linked nodes in API (they need to remove this node from their linked_nodes)
     if (linkedNodes.length > 0) {
         setTimeout(function() {
-            syncTextNodesToAPI(linkedNodes);
+            syncNodesToAPI(linkedNodes);
         }, 100);
     }
 }
@@ -688,7 +822,7 @@ function editEdge(edge) {
             var sourceNode = edge.source();
             var targetNode = edge.target();
             setTimeout(function() {
-                syncTextNodesToAPI([sourceNode, targetNode]);
+                syncNodesToAPI([sourceNode, targetNode]);
             }, 100);
             
             textInputBox.remove();
@@ -721,7 +855,7 @@ function deleteEdge(edge) {
     
     // Update both nodes in API after edge is deleted
     setTimeout(function() {
-        syncTextNodesToAPI([sourceNode, targetNode]);
+        syncNodesToAPI([sourceNode, targetNode]);
     }, 100);
 }
 
@@ -905,7 +1039,7 @@ function createEdge(sourceNode, targetNode) {
     
     // Update both nodes in API after edge is created
     setTimeout(function() {
-        syncTextNodesToAPI([sourceNode, targetNode]);
+        syncNodesToAPI([sourceNode, targetNode]);
     }, 100);
 }
 

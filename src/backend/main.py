@@ -74,6 +74,12 @@ class TextNodeRequest(BaseModel):
     label: str
     linked_nodes: List[LinkedNode] = []
 
+class FileNodeRequest(BaseModel):
+    node_id: str
+    label: str
+    linked_nodes: List[LinkedNode] = []
+    filename: str  # The actual filename on disk
+
 # API routes must be defined before the catch-all route
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...)):
@@ -278,6 +284,14 @@ async def delete_text_node(node_id: str):
                     if linked.get("node_id") != node_id
                 ]
         
+        # Also remove from file nodes' linked_nodes
+        for file_entry in data["files"]:
+            if "linked_nodes" in file_entry:
+                file_entry["linked_nodes"] = [
+                    linked for linked in file_entry["linked_nodes"]
+                    if linked.get("node_id") != node_id
+                ]
+        
         # Save updated data structure
         save_files_json(data)
         
@@ -293,6 +307,140 @@ async def delete_text_node(node_id: str):
             })
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error deleting text node: {str(e)}")
+
+@app.post("/api/file-node")
+async def create_file_node(request: FileNodeRequest):
+    """Save file node information to data.json"""
+    try:
+        # Load existing data structure
+        data = load_files_json()
+        
+        # Find the file entry by filename
+        file_index = next((i for i, file_entry in enumerate(data["files"]) if file_entry.get("filename") == request.filename), None)
+        
+        if file_index is None:
+            raise HTTPException(status_code=404, detail=f"File with filename {request.filename} not found")
+        
+        # Check if node_id already exists in files
+        existing_index = next((i for i, file_entry in enumerate(data["files"]) if file_entry.get("node_id") == request.node_id), None)
+        if existing_index is not None and existing_index != file_index:
+            raise HTTPException(status_code=400, detail=f"File node with id {request.node_id} already exists. Use PUT to update.")
+        
+        # Update the file entry with node information
+        file_entry = data["files"][file_index]
+        file_entry["node_id"] = request.node_id
+        file_entry["label"] = request.label
+        file_entry["linked_nodes"] = [
+            {
+                "node_id": linked.node_id,
+                "linkage_label": linked.linkage_label
+            }
+            for linked in request.linked_nodes
+        ]
+        if "created_date" not in file_entry:
+            file_entry["node_created_date"] = datetime.now().isoformat()
+        
+        # Save updated data structure
+        save_files_json(data)
+        
+        return JSONResponse({
+            "message": "File node saved successfully",
+            "node_id": request.node_id
+        })
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error saving file node: {str(e)}")
+
+@app.put("/api/file-node")
+async def update_file_node(request: FileNodeRequest):
+    """Update file node information in data.json"""
+    try:
+        # Load existing data structure
+        data = load_files_json()
+        
+        # Find the file entry by node_id or filename
+        file_index = next((i for i, file_entry in enumerate(data["files"]) if file_entry.get("node_id") == request.node_id or file_entry.get("filename") == request.filename), None)
+        
+        if file_index is None:
+            raise HTTPException(status_code=404, detail=f"File node with id {request.node_id} or filename {request.filename} not found")
+        
+        # Update the file entry with node information
+        file_entry = data["files"][file_index]
+        file_entry["node_id"] = request.node_id
+        file_entry["label"] = request.label
+        file_entry["linked_nodes"] = [
+            {
+                "node_id": linked.node_id,
+                "linkage_label": linked.linkage_label
+            }
+            for linked in request.linked_nodes
+        ]
+        if "node_created_date" not in file_entry:
+            file_entry["node_created_date"] = datetime.now().isoformat()
+        file_entry["node_updated_date"] = datetime.now().isoformat()
+        
+        # Save updated data structure
+        save_files_json(data)
+        
+        return JSONResponse({
+            "message": "File node updated successfully",
+            "node_id": request.node_id
+        })
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating file node: {str(e)}")
+
+@app.delete("/api/file-node/{node_id}")
+async def delete_file_node(node_id: str):
+    """Delete file node information from data.json (keeps file metadata, removes node info)"""
+    try:
+        # Load existing data structure
+        data = load_files_json()
+        
+        # Find the file entry by node_id
+        file_index = next((i for i, file_entry in enumerate(data["files"]) if file_entry.get("node_id") == node_id), None)
+        
+        if file_index is not None:
+            file_entry = data["files"][file_index]
+            # Remove node-specific fields but keep file metadata
+            file_entry.pop("node_id", None)
+            file_entry.pop("label", None)
+            file_entry.pop("linked_nodes", None)
+            file_entry.pop("node_created_date", None)
+            file_entry.pop("node_updated_date", None)
+        
+        # Remove references to this node from other nodes' linked_nodes
+        for node in data["texts"]:
+            if "linked_nodes" in node:
+                node["linked_nodes"] = [
+                    linked for linked in node["linked_nodes"]
+                    if linked.get("node_id") != node_id
+                ]
+        
+        for file_entry in data["files"]:
+            if "linked_nodes" in file_entry:
+                file_entry["linked_nodes"] = [
+                    linked for linked in file_entry["linked_nodes"]
+                    if linked.get("node_id") != node_id
+                ]
+        
+        # Save updated data structure
+        save_files_json(data)
+        
+        if file_index is not None:
+            return JSONResponse({
+                "message": "File node deleted successfully",
+                "node_id": node_id
+            })
+        else:
+            return JSONResponse({
+                "message": "File node not found (may have been already deleted)",
+                "node_id": node_id
+            })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting file node: {str(e)}")
 
 @app.get("/")
 async def read_root():
