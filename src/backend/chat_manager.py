@@ -91,16 +91,36 @@ if __name__ == "__main__":
     vectorstore = vectorize_all_data(config=config)
     qa_chain = create_qa_chain(vectorstore, config=config)
 
-    print("Thinking...")
-    result = qa_chain.invoke({"input": question})
-    print(f"\nBot: {result['answer']}")
-
+    print("Thinking...\nBot: ", end="", flush=True)
+    
+    # Stream the answer tokens
+    full_answer = ""
+    context_docs = None
+    
+    for chunk in qa_chain.stream({"input": question}):
+        # The chunk structure from retrieval chain can vary:
+        # - Some chunks have "answer" with token strings
+        # - Some chunks have "context" with documents
+        # - Answer tokens are streamed incrementally
+        if "answer" in chunk:
+            answer_token = chunk["answer"]
+            # Only print if it's a new token (not empty)
+            if answer_token:
+                print(answer_token, end="", flush=True)
+                full_answer += answer_token
+        
+        # Capture context documents (may appear in any chunk)
+        if "context" in chunk and chunk["context"]:
+            context_docs = chunk["context"]
+    
+    print()  # New line after streaming
+    
     # Optionally show source documents
-    if result.get('context'):
+    if context_docs:
         print("\n[Sources used:]")
         # Extract unique sources from context documents
         sources = set()
-        for doc in result.get('context', []):
+        for doc in context_docs:
             if hasattr(doc, 'metadata'):
                 source = doc.metadata.get('source', 'Unknown')
                 sources.add(source)
