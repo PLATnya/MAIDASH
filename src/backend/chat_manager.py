@@ -1,13 +1,32 @@
-from langchain_community.llms import Ollama
+from langchain_ollama import OllamaLLM
 from langchain_core.prompts import PromptTemplate
 from langchain_classic.chains import create_retrieval_chain
 from langchain_classic.chains.combine_documents import create_stuff_documents_chain
-from db_manager import vectorize_all_data
+from db_manager import vectorize_all_data, load_config
+from typing import Dict, Any
 
-def create_qa_chain(vectorstore, model_name: str = "deepseek-v3.1:671b-cloud"):
-    """Create a Retrieval QA chain using Ollama LLM."""
+def create_qa_chain(vectorstore, config: Dict[str, Any] = None):
+    """
+    Create a Retrieval QA chain using Ollama LLM.
+    
+    Args:
+        vectorstore: ChromaDB vectorstore instance
+        config: Configuration dictionary (if None, loads from config.json)
+    
+    Returns:
+        QA chain for question answering
+    """
+    # Load config if not provided
+    if config is None:
+        config = load_config()
+    
+    # Get LLM settings from config
+    llm_config = config.get("llm", {})
+    model_name = llm_config.get("model_name", "deepseek-v3.1:671b-cloud")
+    temperature = llm_config.get("temperature", 0.7)
+    
     # Initialize Ollama LLM
-    llm = Ollama(model=model_name, temperature=0.7)
+    llm = OllamaLLM(model=model_name, temperature=temperature)
     
     # Create a custom prompt template
     prompt_template = """Use the following pieces of context to answer the question at the end.
@@ -27,8 +46,16 @@ Answer:"""
     # Create document chain
     document_chain = create_stuff_documents_chain(llm, prompt)
     
+    # Get retriever settings from config
+    retriever_config = config.get("retriever", {})
+    search_type = retriever_config.get("search_type", "similarity")
+    search_kwargs = retriever_config.get("search_kwargs", {"k": 5})
+    
     # Create retrieval chain
-    retriever = vectorstore.as_retriever(search_type="mmr", search_kwargs={"k": 5})
+    retriever = vectorstore.as_retriever(
+        search_type=search_type,
+        search_kwargs=search_kwargs
+    )
     qa_chain = create_retrieval_chain(retriever, document_chain)
     
     return qa_chain
@@ -57,8 +84,12 @@ Answer:"""
 if __name__ == "__main__":
     question = input("You: ").strip()
     print("Initializing QA chain with Ollama...")
-    vectorstore = vectorize_all_data()
-    qa_chain = create_qa_chain(vectorstore)
+    
+    # Load config once
+    config = load_config()
+    
+    vectorstore = vectorize_all_data(config=config)
+    qa_chain = create_qa_chain(vectorstore, config=config)
 
     print("Thinking...")
     result = qa_chain.invoke({"input": question})

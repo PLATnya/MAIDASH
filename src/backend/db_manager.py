@@ -1,16 +1,60 @@
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
-from typing import List
+from typing import List, Dict, Any
 import json
 from pathlib import Path
 from langchain_community.document_loaders import PDFMinerLoader
-from langchain_community.embeddings import OllamaEmbeddings
+from langchain_ollama import OllamaEmbeddings
 from langchain_community.vectorstores import Chroma
 import os
 from dotenv import load_dotenv
 import uuid
 import sys
 import shutil
+
+# Default config path
+CONFIG_PATH = Path(__file__).parent / "config.json"
+
+def load_config(config_path: Path = None) -> Dict[str, Any]:
+    """
+    Load configuration from JSON file.
+    
+    Args:
+        config_path: Path to config file (defaults to config.json in same directory)
+    
+    Returns:
+        Dictionary containing configuration
+    """
+    if config_path is None:
+        config_path = CONFIG_PATH
+    
+    if not config_path.exists():
+        # Return default config if file doesn't exist
+        return {
+            "llm": {
+                "model_name": "deepseek-v3.1:671b-cloud",
+                "temperature": 0.7
+            },
+            "retriever": {
+                "search_type": "similarity",
+                "search_kwargs": {
+                    "k": 5
+                }
+            },
+            "embedding": {
+                "model_name": "mxbai-embed-large:latest"
+            },
+            "database": {
+                "persist_directory": "chroma_db"
+            },
+            "text_splitter": {
+                "chunk_size": 1000,
+                "chunk_overlap": 200
+            }
+        }
+    
+    with open(config_path, 'r', encoding='utf-8') as f:
+        return json.load(f)
 
 
 def clear_chroma_db(persist_directory: str = "chroma_db"):
@@ -30,8 +74,9 @@ def clear_chroma_db(persist_directory: str = "chroma_db"):
 def vectorize_document_chunks(
     documents: List[Document], 
     collection_name: str = None,
-    persist_directory: str = "chroma_db",
-    clear_existing: bool = True
+    persist_directory: str = None,
+    clear_existing: bool = True,
+    config: Dict[str, Any] = None
 ):
     """
     Create a fresh vector store in ChromaDB from documents using Ollama embeddings.
@@ -39,8 +84,9 @@ def vectorize_document_chunks(
     Args:
         documents: List of documents to store
         collection_name: Optional collection name (will generate unique name if not provided)
-        persist_directory: Directory to persist ChromaDB data (default: "chroma_db")
+        persist_directory: Directory to persist ChromaDB data (defaults to config value)
         clear_existing: Whether to clear existing database before creating new one (default: True)
+        config: Configuration dictionary (if None, loads from config.json)
     
     Returns:
         Chroma vectorstore instance
@@ -48,16 +94,28 @@ def vectorize_document_chunks(
     if not documents:
         return None
     
+    # Load config if not provided
+    if config is None:
+        config = load_config()
+    
     # Load environment variables
     load_dotenv()
+    
+    # Get persist_directory from config if not provided
+    if persist_directory is None:
+        persist_directory = config.get("database", {}).get("persist_directory", "chroma_db")
     
     # Clear existing database if requested
     if clear_existing:
         clear_chroma_db(persist_directory)
     
+    # Get embedding model from config
+    embedding_model = config.get("embedding", {}).get("model_name", "mxbai-embed-large:latest")
+    
     # Create embeddings using Ollama
     print("Creating embeddings with Ollama...")
-    embeddings = OllamaEmbeddings(model="mxbai-embed-large:latest")
+    print(f"Using embedding model: {embedding_model}")
+    embeddings = OllamaEmbeddings(model=embedding_model)
     
     # Use unique collection name to avoid persistence conflicts
     if not collection_name:
@@ -80,9 +138,10 @@ def vectorize_document_chunks(
 def split_and_combine_for_embedding(
     documents: List[Document] = None,
     texts: List[str] = None,
-    chunk_size: int = 1000,
-    chunk_overlap: int = 200,
-    length_function=len
+    chunk_size: int = None,
+    chunk_overlap: int = None,
+    length_function=len,
+    config: Dict[str, Any] = None
 ) -> List[Document]:
     """
     Split documents and/or strings using RecursiveCharacterTextSplitter 
@@ -91,13 +150,25 @@ def split_and_combine_for_embedding(
     Args:
         documents: List of Document objects to split
         texts: List of strings to split (will be converted to Documents)
-        chunk_size: Maximum size of chunks (default: 1000)
-        chunk_overlap: Overlap between chunks (default: 200)
+        chunk_size: Maximum size of chunks (defaults to config value)
+        chunk_overlap: Overlap between chunks (defaults to config value)
         length_function: Function to calculate length (default: len)
+        config: Configuration dictionary (if None, loads from config.json)
     
     Returns:
         List of Document chunks ready for embedding
     """
+    # Load config if not provided
+    if config is None:
+        config = load_config()
+    
+    # Get text splitter settings from config
+    text_splitter_config = config.get("text_splitter", {})
+    if chunk_size is None:
+        chunk_size = text_splitter_config.get("chunk_size", 1000)
+    if chunk_overlap is None:
+        chunk_overlap = text_splitter_config.get("chunk_overlap", 200)
+    
     # Initialize the text splitter
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
@@ -248,10 +319,10 @@ def build_pdf_from_data_json() -> List[Document]:
     return result_documents
 
 
-def vectorize_all_data() -> None:
+def vectorize_all_data(config: Dict[str, Any] = None) -> None:
     texts = build_text_from_data_json()
     pdfs = build_pdf_from_data_json()
-    return vectorize_document_chunks(split_and_combine_for_embedding(pdfs, [texts]))
+    return vectorize_document_chunks(split_and_combine_for_embedding(pdfs, [texts]), config=config)
 
 if __name__ == "__main__":
     if "--clear" in sys.argv:
