@@ -57,7 +57,7 @@ def vectorize_document_chunks(
     
     # Create embeddings using Ollama
     print("Creating embeddings with Ollama...")
-    embeddings = OllamaEmbeddings(model="nomic-embed-text")
+    embeddings = OllamaEmbeddings(model="mxbai-embed-large:latest")
     
     # Use unique collection name to avoid persistence conflicts
     if not collection_name:
@@ -251,7 +251,7 @@ def build_pdf_from_data_json() -> List[Document]:
 def vectorize_all_data() -> None:
     texts = build_text_from_data_json()
     pdfs = build_pdf_from_data_json()
-    vectorize_document_chunks(split_and_combine_for_embedding(pdfs, [texts]))
+    return vectorize_document_chunks(split_and_combine_for_embedding(pdfs, [texts]))
 
 if __name__ == "__main__":
     if "--clear" in sys.argv:
