@@ -11,10 +11,14 @@ from dotenv import load_dotenv
 import uuid
 import sys
 import shutil
+import asyncio
+from typing import Optional
 
 # Default config path
 CONFIG_PATH = Path(__file__).parent / "config.json"
 BUFF_VECTOR_STORE = None
+_current_vectorization_task: Optional[asyncio.Task] = None
+
 def load_config(config_path: Path = None) -> Dict[str, Any]:
     """
     Load configuration from JSON file.
@@ -71,25 +75,17 @@ def clear_chroma_db(persist_directory: str = "chroma_db"):
     else:
         print(f"ChromaDB directory {persist_directory} does not exist (nothing to clear).")
 
-def vectorize_document_chunks(
+async def vectorize_document_chunks_async(
     documents: List[Document], 
     collection_name: str = None,
     persist_directory: str = None,
     clear_existing: bool = True,
     config: Dict[str, Any] = None
-):
+) -> Optional[Chroma]:
     """
-    Create a fresh vector store in ChromaDB from documents using Ollama embeddings.
+    Async version: Create a fresh vector store in ChromaDB from documents.
     
-    Args:
-        documents: List of documents to store
-        collection_name: Optional collection name (will generate unique name if not provided)
-        persist_directory: Directory to persist ChromaDB data (defaults to config value)
-        clear_existing: Whether to clear existing database before creating new one (default: True)
-        config: Configuration dictionary (if None, loads from config.json)
-    
-    Returns:
-        Chroma vectorstore instance
+    This can be cancelled using asyncio.Task.cancel()
     """
     if not documents:
         return None
@@ -98,39 +94,61 @@ def vectorize_document_chunks(
     if config is None:
         config = load_config()
     
-    # Load environment variables
     load_dotenv()
     
-    # Get persist_directory from config if not provided
     if persist_directory is None:
         persist_directory = config.get("database", {}).get("persist_directory", "chroma_db")
     
     # Clear existing database if requested
     if clear_existing:
-        clear_chroma_db(persist_directory)
+        # Run blocking operation in executor to avoid blocking event loop
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, clear_chroma_db, persist_directory)
     
     # Get embedding model from config
     embedding_model = config.get("embedding", {}).get("model_name", "mxbai-embed-large:latest")
     
-    # Create embeddings using Ollama
     print("Creating embeddings with Ollama...")
     print(f"Using embedding model: {embedding_model}")
+    
+    # Create embeddings (this might be blocking, so run in executor if needed)
     embeddings = OllamaEmbeddings(model=embedding_model)
     
-    # Use unique collection name to avoid persistence conflicts
+    # Use unique collection name
     if not collection_name:
         collection_name = f"collection_{uuid.uuid4().hex[:8]}"
     
     print(f"Creating ChromaDB vector store with collection: {collection_name}...")
     
-    vector_store = Chroma(
-        collection_name=collection_name,
-        embedding_function=embeddings,
-    )
-    vector_store.add_documents(documents)
-    # Create ChromaDB vector store
-    print(f"ChromaDB vector store created with {len(documents)} document chunks\n")
-    return vector_store
+    # Use afrom_documents if available, otherwise fallback to sync version in executor
+    try:
+        # Check if Chroma has afrom_documents method
+        if hasattr(Chroma, 'afrom_documents'):
+            vector_store = await Chroma.afrom_documents(
+                documents=documents,
+                embedding=embeddings,
+                collection_name=collection_name,
+            )
+        else:
+            # Fallback: run sync version in executor
+            loop = asyncio.get_event_loop()
+            vector_store = await loop.run_in_executor(
+                None,
+                lambda: Chroma.from_documents(
+                    documents=documents,
+                    embedding=embeddings,
+                    collection_name=collection_name,
+                )
+            )
+        
+        print(f"ChromaDB vector store created with {len(documents)} document chunks\n")
+        return vector_store
+    except asyncio.CancelledError:
+        print("Vectorization cancelled during document embedding")
+        raise
+    except Exception as e:
+        print(f"Error creating vector store: {e}")
+        raise
 
 def split_and_combine_for_embedding(
     documents: List[Document] = None,
@@ -338,53 +356,117 @@ def get_buff_vector_store():
     global BUFF_VECTOR_STORE
     return BUFF_VECTOR_STORE
 
-def update_vectors():
+async def update_vectors_async():
+    """Update vectors with async cancellation support"""
+    global _current_vectorization_task, BUFF_VECTOR_STORE
+    
+    # Cancel previous task if running
+    if _current_vectorization_task and not _current_vectorization_task.done():
+        print("Cancelling previous vectorization task...")
+        _current_vectorization_task.cancel()
+        try:
+            await _current_vectorization_task
+        except asyncio.CancelledError:
+            print("Previous vectorization task cancelled successfully")
+    
+    # Start new task
     config = load_config()
-    vectorize_all_data(config=config)
+    _current_vectorization_task = asyncio.create_task(
+        vectorize_all_data_async(config=config)
+    )
+    
+    try:
+        result = await _current_vectorization_task
+        return result
+    except asyncio.CancelledError:
+        print("Vectorization task was cancelled")
+        return None
 
 def on_data_updated():
-    """Called when data.json is updated to refresh the vector store"""
-    update_vectors()
+    """Called when data.json is updated - triggers async update"""
+    # Since this is called from sync code, we need to handle it properly
+    # Option 1: Run in background task
+    try:
+        loop = asyncio.get_running_loop()
+        # We're already in an async context, create task
+        asyncio.create_task(update_vectors_async())
+    except RuntimeError:
+        # No event loop running, create new one
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(update_vectors_async())
+        loop.close()
 
+async def get_vector_store_async(config: Dict[str, Any] = None) -> Chroma:
+    """Async version of get_vector_store"""
+    global BUFF_VECTOR_STORE, _current_vectorization_task
     
-def get_vector_store(config: Dict[str, Any] = None) -> Chroma:
-    global BUFF_VECTOR_STORE
+    # Wait for in-progress task if any
+    if _current_vectorization_task and not _current_vectorization_task.done():
+        try:
+            BUFF_VECTOR_STORE = await _current_vectorization_task
+        except asyncio.CancelledError:
+            # Task was cancelled, vector store might be None
+            pass
+    
     if BUFF_VECTOR_STORE is None:
-        return vectorize_all_data(config=config)
+        config = config or load_config()
+        BUFF_VECTOR_STORE = await vectorize_all_data_async(config=config)
+    
     return BUFF_VECTOR_STORE
 
-def vectorize_all_data(config: Dict[str, Any] = None) -> None:
+async def vectorize_all_data_async(
+    config: Dict[str, Any] = None
+) -> Optional[Chroma]:
+    """Async version of vectorize_all_data"""
     global BUFF_VECTOR_STORE
+    
+    # Clean up old vector store
     if BUFF_VECTOR_STORE is not None:
         try:
             if hasattr(BUFF_VECTOR_STORE, 'delete_collection'):
-                BUFF_VECTOR_STORE.delete_collection()
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    None,
+                    BUFF_VECTOR_STORE.delete_collection
+                )
                 BUFF_VECTOR_STORE = None
-        except:
-            pass
+        except Exception as e:
+            print(f"Error cleaning up old vector store: {e}")
     
-    texts = build_text_from_data_json()
-    pdfs = build_pdf_from_data_json()
-    all_data = split_and_combine_for_embedding(pdfs, [texts])
-    # INSERT_YOUR_CODE
-    # Write all data to txt file for debugging/inspection
+    # Build documents (these are sync operations, run in executor)
+    loop = asyncio.get_event_loop()
+    texts = await loop.run_in_executor(None, build_text_from_data_json)
+    pdfs = await loop.run_in_executor(None, build_pdf_from_data_json)
+    all_data = await loop.run_in_executor(
+        None,
+        lambda: split_and_combine_for_embedding(pdfs, [texts])
+    )
+    
+    # Write debug file
     output_path = "all_data_dump.txt"
     try:
-        with open(output_path, "w", encoding="utf-8") as f:
-            for chunk in all_data:
-                f.write(str(chunk))
-                f.write("\n" + "-" * 80 + "\n")
+        def write_debug_file():
+            with open(output_path, "w", encoding="utf-8") as f:
+                for chunk in all_data:
+                    f.write(str(chunk))
+                    f.write("\n" + "-" * 80 + "\n")
+        await loop.run_in_executor(None, write_debug_file)
         print(f"Dumped all data to {output_path}")
     except Exception as e:
         print(f"Failed to write all_data to file: {e}")
-
-
-    BUFF_VECTOR_STORE = vectorize_document_chunks(all_data, config=config)
+    
+    # Create vector store (this can be cancelled!)
+    BUFF_VECTOR_STORE = await vectorize_document_chunks_async(
+        all_data, 
+        config=config
+    )
+    
     return BUFF_VECTOR_STORE
 
-if __name__ == "__main__":
-    if "--clear" in sys.argv:
-        print("Clearing ChromaDB database...")
-        clear_chroma_db()
-    else:
-        vectorize_all_data()
+# if __name__ == "__main__":
+#     if "--clear" in sys.argv:
+#         print("Clearing ChromaDB database...")
+#         clear_chroma_db()
+#     else:
+#         vectorize_all_data()

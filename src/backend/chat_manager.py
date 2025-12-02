@@ -2,7 +2,7 @@ from langchain_ollama import OllamaLLM
 from langchain_core.prompts import PromptTemplate
 from langchain_classic.chains import create_retrieval_chain
 from langchain_classic.chains.combine_documents import create_stuff_documents_chain
-from db_manager import get_vector_store, load_config, update_vectors
+from db_manager import get_vector_store_async, load_config
 from typing import Dict, Any
 import json
 
@@ -30,7 +30,8 @@ def create_qa_chain(vectorstore, config: Dict[str, Any] = None):
     llm = OllamaLLM(model=model_name, temperature=temperature)
     
     # Create a custom prompt template
-    prompt_template = """Use the following pieces of context to answer the question at the end.
+    prompt_template = """Use the following pieces of context to answer the question at the end. 
+    Answer as small as possible, don't be verbose.
 If you don't know the answer, just say that you don't know, don't try to make up an answer.
 
 Context: {context}
@@ -88,7 +89,7 @@ class NoQueryError(Exception):
 class ErrorProcessingQuestionError(Exception):
     pass
 
-def ask_question_stream(query):
+async def ask_question_stream(query):
     try:
         if not query:
             raise NoQueryError()
@@ -97,7 +98,7 @@ def ask_question_stream(query):
         config = load_config()
         
         # Initialize vectorstore
-        vectorstore = get_vector_store(config=config)
+        vectorstore = await get_vector_store_async(config=config)
         
         # Create QA chain
         qa_chain = create_qa_chain(vectorstore, config=config)
@@ -136,11 +137,11 @@ def ask_question_stream(query):
         raise ErrorProcessingQuestionError(f"Error processing question: {str(e)}")
 
 
-def ask_question_cli(query):
+async def ask_question_cli(query):
         # Load config once
     config = load_config()
     
-    vectorstore = get_vector_store(config=config)
+    vectorstore = await get_vector_store_async(config=config)
     qa_chain = create_qa_chain(vectorstore, config=config)
 
     print("Thinking...\nBot: ", end="", flush=True)
@@ -180,10 +181,10 @@ def ask_question_cli(query):
             print(f"  {i}. {source}")
 
 
-if __name__ == "__main__":
-    update_vectors()
-    update_vectors()
-    question = input("You: ").strip()
-    print("Initializing QA chain with Ollama...")
+# if __name__ == "__main__":
+#     # update_vectors()
+#     # update_vectors()
+#     # question = input("You: ").strip()
+#     # print("Initializing QA chain with Ollama...")
 
-    ask_question_cli(question)
+#     # ask_question_cli(question)

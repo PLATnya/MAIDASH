@@ -9,7 +9,7 @@ import json
 from datetime import datetime
 from typing import List
 from chat_manager import ErrorProcessingQuestionError, NoQueryError, ask_question_stream
-from db_manager import clear_data_folder, on_data_updated
+from db_manager import clear_data_folder, update_vectors_async, get_vector_store_async
 
 app = FastAPI()
 
@@ -132,8 +132,8 @@ async def upload_file(file: UploadFile = File(...)):
         # Save updated data structure
         save_files_json(data)
         
-        # Notify that data was updated
-        on_data_updated()
+        # Notify that data was updated (async)
+        await update_vectors_async()
         
         return JSONResponse({
             "message": "File uploaded successfully",
@@ -173,8 +173,8 @@ async def delete_file(request: DeleteFileRequest):
         data["files"] = [f for f in data["files"] if f.get("filename") != filename]
         save_files_json(data)
         
-        # Notify that data was updated
-        on_data_updated()
+        # Notify that data was updated (async)
+        await update_vectors_async()
         
         return JSONResponse({
             "message": "File deleted successfully",
@@ -220,8 +220,8 @@ async def create_text_node(request: TextNodeRequest):
         # Save updated data structure
         save_files_json(data)
         
-        # Notify that data was updated
-        on_data_updated()
+        # Notify that data was updated (async)
+        await update_vectors_async()
         
         return JSONResponse({
             "message": "Text node saved successfully",
@@ -286,8 +286,8 @@ async def update_text_node(request: TextNodeRequest):
         # Save updated data structure
         save_files_json(data)
         
-        # Notify that data was updated
-        on_data_updated()
+        # Notify that data was updated (async)
+        await update_vectors_async()
         
         return JSONResponse({
             "message": "Text node updated successfully",
@@ -326,8 +326,8 @@ async def delete_text_node(node_id: str):
         # Save updated data structure
         save_files_json(data)
         
-        # Notify that data was updated
-        on_data_updated()
+        # Notify that data was updated (async)
+        await update_vectors_async()
         
         if len(data["texts"]) < initial_length:
             return JSONResponse({
@@ -380,8 +380,8 @@ async def create_file_node(request: FileNodeRequest):
         # Save updated data structure
         save_files_json(data)
         
-        # Notify that data was updated
-        on_data_updated()
+        # Notify that data was updated (async)
+        await update_vectors_async()
         
         return JSONResponse({
             "message": "File node saved successfully",
@@ -429,8 +429,8 @@ async def update_file_node(request: FileNodeRequest):
         # Save updated data structure
         save_files_json(data)
         
-        # Notify that data was updated
-        on_data_updated()
+        # Notify that data was updated (async)
+        await update_vectors_async()
         
         return JSONResponse({
             "message": "File node updated successfully",
@@ -478,8 +478,8 @@ async def delete_file_node(node_id: str):
         # Save updated data structure
         save_files_json(data)
         
-        # Notify that data was updated
-        on_data_updated()
+        # Notify that data was updated (async)
+        await update_vectors_async()
         
         if file_index is not None:
             return JSONResponse({
@@ -499,7 +499,7 @@ async def ask_question(request: AskRequest):
     """Process a question using the QA chain and return streaming response"""
     try:
         query = request.query.strip()
-        response = ask_question_stream(query)
+        response = await ask_question_stream(query)
         return StreamingResponse(response, media_type="application/x-ndjson")
 
     except NoQueryError:
