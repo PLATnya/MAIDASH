@@ -2,7 +2,7 @@ from langchain_ollama import OllamaLLM
 from langchain_core.prompts import PromptTemplate
 from langchain_classic.chains import create_retrieval_chain
 from langchain_classic.chains.combine_documents import create_stuff_documents_chain
-from db_manager import get_vector_store_async, load_config
+from db_manager import get_vector_store_async, load_config, wait_for_vectorization_if_ongoing
 from typing import Dict, Any
 import json
 
@@ -94,6 +94,9 @@ async def ask_question_stream(query):
         if not query:
             raise NoQueryError()
         
+        # Wait for vectorization to complete if it's currently running
+        await wait_for_vectorization_if_ongoing()
+        
         # Load config
         config = load_config()
         
@@ -138,7 +141,10 @@ async def ask_question_stream(query):
 
 
 async def ask_question_cli(query):
-        # Load config once
+    # Wait for vectorization to complete if it's currently running
+    await wait_for_vectorization_if_ongoing()
+    
+    # Load config once
     config = load_config()
     
     vectorstore = await get_vector_store_async(config=config)

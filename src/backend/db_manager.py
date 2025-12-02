@@ -397,6 +397,17 @@ def on_data_updated():
         loop.run_until_complete(update_vectors_async())
         loop.close()
 
+async def wait_for_vectorization_if_ongoing():
+    """Wait for vectorization task to complete if it's currently running"""
+    global _current_vectorization_task
+    
+    if _current_vectorization_task and not _current_vectorization_task.done():
+        try:
+            await _current_vectorization_task
+        except asyncio.CancelledError:
+            # Task was cancelled, continue
+            pass
+
 async def get_vector_store_async(config: Dict[str, Any] = None) -> Chroma:
     """Async version of get_vector_store"""
     global BUFF_VECTOR_STORE, _current_vectorization_task
