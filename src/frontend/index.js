@@ -78,7 +78,6 @@ var sourceNodeForLink = null;
 
 // Variable to store the current input box and click position
 var textInputBox = null;
-var commandInputBox = null;
 var clickPosition = null;
 var graphPosition = null;
 var mousePosition = null;
@@ -111,19 +110,21 @@ function screenToGraph(screenX, screenY) {
 // Function to style input box
 function styleInputBox(inputBox) {
     inputBox.style.position = 'absolute';
-    inputBox.style.padding = '12px 16px';
-    inputBox.style.fontSize = '15px';
+    inputBox.style.padding = '16px 20px';
+    inputBox.style.fontSize = '16px';
     inputBox.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
     inputBox.style.border = '2px solid #3498db';
-    inputBox.style.borderRadius = '8px';
+    inputBox.style.borderRadius = '12px';
     inputBox.style.zIndex = '1000';
     inputBox.style.outline = 'none';
     inputBox.style.backgroundColor = '#ffffff';
     inputBox.style.color = '#2c3e50';
-    inputBox.style.boxShadow = '0 4px 12px rgba(52, 152, 219, 0.3), 0 2px 4px rgba(0, 0, 0, 0.1)';
-    inputBox.style.transition = 'all 0.2s ease';
-    inputBox.style.minWidth = '200px';
-    inputBox.style.maxWidth = '400px';
+    inputBox.style.boxShadow = '0 8px 24px rgba(52, 152, 219, 0.25), 0 4px 8px rgba(0, 0, 0, 0.1)';
+    inputBox.style.transition = 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)';
+    inputBox.style.minWidth = '400px';
+    inputBox.style.width = '500px';
+    inputBox.style.maxWidth = '700px';
+    inputBox.setAttribute('placeholder', 'Type node label or command (e.g., /load)');
     
     // Store base transform (should be set before calling this function)
     var baseTransform = inputBox.style.transform || 'translate(-50%, -50%)';
@@ -132,57 +133,21 @@ function styleInputBox(inputBox) {
     // Add focus styles
     inputBox.addEventListener('focus', function() {
         this.style.borderColor = '#2980b9';
-        this.style.boxShadow = '0 6px 16px rgba(52, 152, 219, 0.4), 0 2px 6px rgba(0, 0, 0, 0.15)';
+        this.style.boxShadow = '0 12px 32px rgba(52, 152, 219, 0.35), 0 6px 12px rgba(0, 0, 0, 0.15)';
+        this.style.backgroundColor = '#f8f9fa';
         var base = this.dataset.baseTransform || 'translate(-50%, -50%)';
         this.style.transform = base + ' scale(1.02)';
     });
     
     inputBox.addEventListener('blur', function() {
         this.style.borderColor = '#3498db';
-        this.style.boxShadow = '0 4px 12px rgba(52, 152, 219, 0.3), 0 2px 4px rgba(0, 0, 0, 0.1)';
+        this.style.boxShadow = '0 8px 24px rgba(52, 152, 219, 0.25), 0 4px 8px rgba(0, 0, 0, 0.1)';
+        this.style.backgroundColor = '#ffffff';
         var base = this.dataset.baseTransform || 'translate(-50%, -50%)';
         this.style.transform = base;
     });
 }
 
-// Function to style command input box (wide version)
-function styleCommandInputBox(inputBox) {
-    inputBox.style.position = 'absolute';
-    inputBox.style.padding = '12px 16px';
-    inputBox.style.fontSize = '15px';
-    inputBox.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
-    inputBox.style.border = '2px solid #9b59b6';
-    inputBox.style.borderRadius = '8px';
-    inputBox.style.zIndex = '1000';
-    inputBox.style.outline = 'none';
-    inputBox.style.backgroundColor = '#ffffff';
-    inputBox.style.color = '#2c3e50';
-    inputBox.style.boxShadow = '0 4px 12px rgba(155, 89, 182, 0.3), 0 2px 4px rgba(0, 0, 0, 0.1)';
-    inputBox.style.transition = 'all 0.2s ease';
-    inputBox.style.minWidth = '500px';
-    inputBox.style.maxWidth = '800px';
-    inputBox.style.width = '600px';
-    inputBox.setAttribute('placeholder', 'Type command (e.g., /load)');
-    
-    // Store base transform (should be set before calling this function)
-    var baseTransform = inputBox.style.transform || 'translate(-50%, -50%)';
-    inputBox.dataset.baseTransform = baseTransform;
-    
-    // Add focus styles
-    inputBox.addEventListener('focus', function() {
-        this.style.borderColor = '#8e44ad';
-        this.style.boxShadow = '0 6px 16px rgba(155, 89, 182, 0.4), 0 2px 6px rgba(0, 0, 0, 0.15)';
-        var base = this.dataset.baseTransform || 'translate(-50%, -50%)';
-        this.style.transform = base + ' scale(1.02)';
-    });
-    
-    inputBox.addEventListener('blur', function() {
-        this.style.borderColor = '#9b59b6';
-        this.style.boxShadow = '0 4px 12px rgba(155, 89, 182, 0.3), 0 2px 4px rgba(0, 0, 0, 0.1)';
-        var base = this.dataset.baseTransform || 'translate(-50%, -50%)';
-        this.style.transform = base;
-    });
-}
 
 // Function to handle commands
 function handleCommand(command) {
@@ -1109,7 +1074,7 @@ cy.on('tap', function(evt) {
         // Deselect nodes when clicking on background
         deselectAllNodes();
         
-        // Show command input box on left click only (not right click)
+        // Show unified input box on left click only (not right click)
         if (!isRightClick && !contextMenu) {
             // Get click position
             var screenX = originalEvent ? (originalEvent.clientX || originalEvent.pageX || 0) : 0;
@@ -1122,11 +1087,9 @@ cy.on('tap', function(evt) {
                 screenY = containerRect.top + containerRect.height / 2;
             }
             
-            // Remove existing command input box if any
-            if (commandInputBox) {
-                commandInputBox.remove();
-                commandInputBox = null;
-            }
+            // Store click position (screen coordinates) for input box
+            clickPosition = { x: screenX, y: screenY };
+            graphPosition = screenToGraph(screenX, screenY);
             
             // Remove existing text input box if any
             if (textInputBox) {
@@ -1134,39 +1097,69 @@ cy.on('tap', function(evt) {
                 textInputBox = null;
             }
             
-            // Create command input box
-            commandInputBox = document.createElement('input');
-            commandInputBox.type = 'text';
-            commandInputBox.placeholder = 'Type command (e.g., /load)';
-            commandInputBox.style.left = screenX + 'px';
-            commandInputBox.style.top = screenY + 'px';
-            commandInputBox.style.transform = 'translate(-50%, -50%)';
-            styleCommandInputBox(commandInputBox);
+            // Create unified input box
+            textInputBox = document.createElement('input');
+            textInputBox.type = 'text';
+            textInputBox.style.left = screenX + 'px';
+            textInputBox.style.top = screenY + 'px';
+            textInputBox.style.transform = 'translate(-50%, -50%)';
+            textInputBox.value = '';
+            styleInputBox(textInputBox);
             
-            document.body.appendChild(commandInputBox);
-            commandInputBox.focus();
+            document.body.appendChild(textInputBox);
+            textInputBox.focus();
             
-            // Handle Enter key to execute command
-            commandInputBox.addEventListener('keydown', function(e) {
+            // Handle Enter key to execute command or create node
+            textInputBox.addEventListener('keydown', function(e) {
                 if (e.key === 'Enter') {
-                    var command = commandInputBox.value.trim();
-                    if (command) {
-                        handleCommand(command);
+                    var input = textInputBox.value.trim();
+                    if (input) {
+                        // Check if it's a command (starts with /)
+                        if (input.startsWith('/')) {
+                            handleCommand(input);
+                        } else {
+                            // Create new node at click position
+                            if (graphPosition) {
+                                var nodeId = 'node_' + (++nodeIdCounter);
+                                var newNode = cy.add({
+                                    data: { 
+                                        id: nodeId, 
+                                        label: input,
+                                        editable: true
+                                    },
+                                    renderedPosition: { x: graphPosition.x, y: graphPosition.y }
+                                });
+                                
+                                // Get linked nodes and send to API (only for text nodes)
+                                if (isTextNode(newNode)) {
+                                    setTimeout(function() {
+                                        var linkedNodes = getLinkedNodes(newNode);
+                                        saveTextNodeToAPI(nodeId, input, linkedNodes);
+                                    }, 100);
+                                }
+                            }
+                        }
                     }
-                    commandInputBox.remove();
-                    commandInputBox = null;
+                    textInputBox.remove();
+                    textInputBox = null;
+                    clickPosition = null;
+                    graphPosition = null;
                 } else if (e.key === 'Escape') {
-                    commandInputBox.remove();
-                    commandInputBox = null;
+                    textInputBox.remove();
+                    textInputBox = null;
+                    clickPosition = null;
+                    graphPosition = null;
                 }
             });
             
             // Close on blur
-            commandInputBox.addEventListener('blur', function() {
+            textInputBox.addEventListener('blur', function() {
                 setTimeout(function() {
-                    if (commandInputBox) {
-                        commandInputBox.remove();
-                        commandInputBox = null;
+                    if (textInputBox) {
+                        textInputBox.remove();
+                        textInputBox = null;
+                        clickPosition = null;
+                        graphPosition = null;
                     }
                 }, 200);
             });
@@ -1245,87 +1238,7 @@ cy.on('cxttap', function(evt) {
         if (resizingMode) {
             cancelResizing();
         }
-        
-        // Get the original event to access mouse coordinates for input box positioning
-        var originalEvent = evt.originalEvent || evt.cyEvent || evt;
-        var screenX = originalEvent.clientX || originalEvent.pageX;
-        var screenY = originalEvent.clientY || originalEvent.pageY;
-        
-        // Store click position (screen coordinates) for input box
-        clickPosition = { x: screenX, y: screenY };
-
-        graphPosition = screenToGraph(screenX, screenY);
-        
-        // Remove existing input box if any
-        if (textInputBox) {
-            textInputBox.remove();
-            textInputBox = null;
-        }
-        
-        // Create input text box at mouse position
-        textInputBox = document.createElement('input');
-        textInputBox.type = 'text';
-        textInputBox.style.left = clickPosition.x + 'px';
-        textInputBox.style.top = clickPosition.y + 'px';
-        textInputBox.style.transform = 'translate(-50%, -50%)';
-        textInputBox.value = '';
-        styleInputBox(textInputBox);
-        
-        document.body.appendChild(textInputBox);
-        textInputBox.focus();
-        
-        // Handle Enter key to create node or close if empty
-        textInputBox.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') {
-                var newLabel = textInputBox.value.trim();
-                
-                if (newLabel && textInputBox && graphPosition) {
-                    // Create new box node at the last mouse position (where user right-clicked)
-                    var nodeId = 'node_' + (++nodeIdCounter);
-                    var newNode = cy.add({
-                        data: { 
-                            id: nodeId, 
-                            label: newLabel,
-                            editable: true
-                        },
-                        renderedPosition: { x: graphPosition.x, y: graphPosition.y }
-                    });
-                    
-                    // Get linked nodes and send to API (only for text nodes)
-                    // Use setTimeout to ensure the node is fully added to the graph first
-                    if (isTextNode(newNode)) {
-                        setTimeout(function() {
-                            var linkedNodes = getLinkedNodes(newNode);
-                            saveTextNodeToAPI(nodeId, newLabel, linkedNodes);
-                        }, 100);
-                    }
-                }
-                
-                // Remove input box
-                textInputBox.remove();
-                textInputBox = null;
-                clickPosition = null;
-                graphPosition = null;
-            } else if (e.key === 'Escape') {
-                // Cancel on Escape
-                textInputBox.remove();
-                textInputBox = null;
-                clickPosition = null;
-                graphPosition = null;
-            }
-        });
-        
-        // Close on blur (click outside)
-        textInputBox.addEventListener('blur', function() {
-            setTimeout(function() {
-                if (textInputBox) {
-                    textInputBox.remove();
-                    textInputBox = null;
-                    clickPosition = null;
-                    graphPosition = null;
-                }
-            }, 200);
-        });
+        // Right-click on background does nothing (no input box)
     }
 });
 
