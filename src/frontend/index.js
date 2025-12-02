@@ -233,9 +233,27 @@ function askQuestion(query) {
     answerDiv.style.lineHeight = '1.6';
     answerDiv.textContent = 'Thinking...';
     
+    var buttonsContainer = document.createElement('div');
+    buttonsContainer.style.display = 'flex';
+    buttonsContainer.style.gap = '10px';
+    buttonsContainer.style.marginTop = '16px';
+    buttonsContainer.style.justifyContent = 'flex-end';
+    
+    var createNodeButton = document.createElement('button');
+    createNodeButton.textContent = 'Create Node';
+    createNodeButton.style.padding = '10px 20px';
+    createNodeButton.style.backgroundColor = '#95a5a6';
+    createNodeButton.style.color = '#ffffff';
+    createNodeButton.style.border = 'none';
+    createNodeButton.style.borderRadius = '6px';
+    createNodeButton.style.cursor = 'not-allowed';
+    createNodeButton.style.fontSize = '14px';
+    createNodeButton.style.fontWeight = 'bold';
+    createNodeButton.disabled = true;
+    createNodeButton.style.opacity = '0.5';
+    
     var closeButton = document.createElement('button');
     closeButton.textContent = 'Close';
-    closeButton.style.marginTop = '16px';
     closeButton.style.padding = '10px 20px';
     closeButton.style.backgroundColor = '#3498db';
     closeButton.style.color = '#ffffff';
@@ -255,9 +273,12 @@ function askQuestion(query) {
         }
     });
     
+    buttonsContainer.appendChild(createNodeButton);
+    buttonsContainer.appendChild(closeButton);
+    
     modalContent.appendChild(title);
     modalContent.appendChild(answerDiv);
-    modalContent.appendChild(closeButton);
+    modalContent.appendChild(buttonsContainer);
     modal.appendChild(modalContent);
     document.body.appendChild(modal);
     
@@ -278,6 +299,62 @@ function askQuestion(query) {
         var decoder = new TextDecoder();
         var fullAnswer = '';
         var buffer = '';
+        var responseCompleted = false;
+        
+        // Function to enable the create node button
+        function enableCreateNodeButton() {
+            createNodeButton.disabled = false;
+            createNodeButton.style.backgroundColor = '#27ae60';
+            createNodeButton.style.cursor = 'pointer';
+            createNodeButton.style.opacity = '1';
+        }
+        
+        // Function to create node with response text
+        function createNodeFromResponse() {
+            if (!fullAnswer.trim()) {
+                alert('No response text to create node from');
+                return;
+            }
+            
+            // Get center of viewport in graph coordinates
+            var containerRect = container.getBoundingClientRect();
+            var centerScreenX = containerRect.left + containerRect.width / 2;
+            var centerScreenY = containerRect.top + containerRect.height / 2;
+            var graphPos = screenToGraph(centerScreenX, centerScreenY);
+            
+            // Create new node with response text
+            var nodeId = 'node_' + (++nodeIdCounter);
+            var newNode = cy.add({
+                data: { 
+                    id: nodeId, 
+                    label: fullAnswer.trim(),
+                    editable: true
+                },
+                renderedPosition: { x: graphPos.x, y: graphPos.y }
+            });
+            
+            // Save node to API
+            setTimeout(function() {
+                var linkedNodes = getLinkedNodes(newNode);
+                var color = newNode.data('color') || null;
+                saveTextNodeToAPI(nodeId, fullAnswer.trim(), linkedNodes, color);
+            }, 100);
+            
+            // Focus on the new node
+            setTimeout(function() {
+                focusOnNode(newNode);
+            }, 100);
+            
+            // Close the modal
+            document.body.removeChild(modal);
+        }
+        
+        // Add click handler to create node button
+        createNodeButton.addEventListener('click', function() {
+            if (!createNodeButton.disabled) {
+                createNodeFromResponse();
+            }
+        });
         
         function readStream() {
             reader.read().then(function(result) {
@@ -291,10 +368,18 @@ function askQuestion(query) {
                                 answerDiv.textContent = fullAnswer;
                             } else if (data.type === 'done') {
                                 answerDiv.textContent = data.answer || fullAnswer;
+                                if (data.answer) {
+                                    fullAnswer = data.answer;
+                                }
                             }
                         } catch (e) {
                             console.error('Error parsing final buffer:', e);
                         }
+                    }
+                    // Enable create node button and show alert when response is fully done
+                    if (!responseCompleted) {
+                        responseCompleted = true;
+                        enableCreateNodeButton();
                     }
                     return;
                 }
@@ -320,6 +405,14 @@ function askQuestion(query) {
                             answerDiv.textContent = fullAnswer + sourcesText;
                         } else if (data.type === 'done') {
                             answerDiv.textContent = data.answer || fullAnswer;
+                            if (data.answer) {
+                                fullAnswer = data.answer;
+                            }
+                            // Enable create node button and show alert when done message is received
+                            if (!responseCompleted) {
+                                responseCompleted = true;
+                                enableCreateNodeButton();
+                            }
                         } else if (data.type === 'error') {
                             answerDiv.textContent = 'Error: ' + data.message;
                             answerDiv.style.color = '#e74c3c';
@@ -691,7 +784,7 @@ function uploadFileToDB(file) {
             focusOnNode(fileNode);
         }, 100);
         
-        alert('File "' + file.name + '" uploaded successfully!');
+        //alert('File "' + file.name + '" uploaded successfully!');
     })
     .catch(function(error) {
         console.error('Error uploading file:', error);
