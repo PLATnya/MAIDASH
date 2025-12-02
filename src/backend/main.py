@@ -75,12 +75,14 @@ class TextNodeRequest(BaseModel):
     node_id: str
     label: str
     linked_nodes: List[LinkedNode] = []
+    color: str = None  # Optional color field (hex color code)
 
 class FileNodeRequest(BaseModel):
     node_id: str
     label: str
     linked_nodes: List[LinkedNode] = []
     filename: str  # The actual filename on disk
+    color: str = None  # Optional color field (hex color code)
 
 class AskRequest(BaseModel):
     query: str
@@ -202,6 +204,9 @@ async def create_text_node(request: TextNodeRequest):
             ],
             "created_date": datetime.now().isoformat()
         }
+        # Add color if provided
+        if request.color:
+            text_node_entry["color"] = request.color
         
         # Add new text node entry to texts array
         data["texts"].append(text_node_entry)
@@ -242,11 +247,14 @@ async def update_text_node(request: TextNodeRequest):
                 ],
                 "created_date": datetime.now().isoformat()
             }
+            # Add color if provided
+            if request.color:
+                text_node_entry["color"] = request.color
             data["texts"].append(text_node_entry)
         else:
             # Update existing node
             existing_node = data["texts"][node_index]
-            data["texts"][node_index] = {
+            updated_node = {
                 "node_id": request.node_id,
                 "label": request.label,
                 "linked_nodes": [
@@ -259,6 +267,12 @@ async def update_text_node(request: TextNodeRequest):
                 "created_date": existing_node.get("created_date", datetime.now().isoformat()),
                 "updated_date": datetime.now().isoformat()
             }
+            # Preserve existing color if not provided, or update if provided
+            if request.color:
+                updated_node["color"] = request.color
+            elif "color" in existing_node:
+                updated_node["color"] = existing_node["color"]
+            data["texts"][node_index] = updated_node
         
         # Save updated data structure
         save_files_json(data)
@@ -342,6 +356,9 @@ async def create_file_node(request: FileNodeRequest):
             }
             for linked in request.linked_nodes
         ]
+        # Add color if provided
+        if request.color:
+            file_entry["color"] = request.color
         if "created_date" not in file_entry:
             file_entry["node_created_date"] = datetime.now().isoformat()
         
@@ -381,6 +398,12 @@ async def update_file_node(request: FileNodeRequest):
             }
             for linked in request.linked_nodes
         ]
+        # Update color if provided, otherwise preserve existing
+        if request.color:
+            file_entry["color"] = request.color
+        elif "color" not in file_entry:
+            # If no color provided and none exists, don't add it
+            pass
         if "node_created_date" not in file_entry:
             file_entry["node_created_date"] = datetime.now().isoformat()
         file_entry["node_updated_date"] = datetime.now().isoformat()

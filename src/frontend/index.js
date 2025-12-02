@@ -21,6 +21,11 @@ var cy = cytoscape({
             'font-weight': 'bold'
         }
     }, {
+        selector: 'node[color]',
+        style: {
+            'background-color': 'data(color)'
+        }
+    }, {
         selector: 'edge',
         style: {
             'width': 2,
@@ -379,7 +384,8 @@ function createFileNode(fileName, position, actualFileName) {
     // Save file node info to API
     setTimeout(function() {
         var linkedNodes = getLinkedNodes(newNode);
-        saveFileNodeToAPI(nodeId, fileName, linkedNodes, storedFileName);
+        var color = newNode.data('color') || null;
+        saveFileNodeToAPI(nodeId, fileName, linkedNodes, storedFileName, color);
     }, 100);
     
     return newNode;
@@ -425,12 +431,15 @@ function isFileNode(node) {
 }
 
 // Function to send text node info to API (create)
-function saveTextNodeToAPI(nodeId, label, linkedNodes) {
+function saveTextNodeToAPI(nodeId, label, linkedNodes, color) {
     var payload = {
         node_id: nodeId,
         label: label,
         linked_nodes: linkedNodes
     };
+    if (color) {
+        payload.color = color;
+    }
     
     fetch('/api/text-node', {
         method: 'POST',
@@ -454,12 +463,15 @@ function saveTextNodeToAPI(nodeId, label, linkedNodes) {
 }
 
 // Function to update text node info in API
-function updateTextNodeInAPI(nodeId, label, linkedNodes) {
+function updateTextNodeInAPI(nodeId, label, linkedNodes, color) {
     var payload = {
         node_id: nodeId,
         label: label,
         linked_nodes: linkedNodes
     };
+    if (color) {
+        payload.color = color;
+    }
     
     fetch('/api/text-node', {
         method: 'PUT',
@@ -513,8 +525,9 @@ function syncTextNodeToAPI(node) {
     var nodeId = node.id();
     var label = node.data('label') || '';
     var linkedNodes = getLinkedNodes(node);
+    var color = node.data('color') || null;
     
-    updateTextNodeInAPI(nodeId, label, linkedNodes);
+    updateTextNodeInAPI(nodeId, label, linkedNodes, color);
 }
 
 // Function to update text node info for multiple nodes
@@ -525,13 +538,16 @@ function syncTextNodesToAPI(nodes) {
 }
 
 // Function to send file node info to API (create)
-function saveFileNodeToAPI(nodeId, label, linkedNodes, filename) {
+function saveFileNodeToAPI(nodeId, label, linkedNodes, filename, color) {
     var payload = {
         node_id: nodeId,
         label: label,
         linked_nodes: linkedNodes,
         filename: filename
     };
+    if (color) {
+        payload.color = color;
+    }
     
     fetch('/api/file-node', {
         method: 'POST',
@@ -555,13 +571,16 @@ function saveFileNodeToAPI(nodeId, label, linkedNodes, filename) {
 }
 
 // Function to update file node info in API
-function updateFileNodeInAPI(nodeId, label, linkedNodes, filename) {
+function updateFileNodeInAPI(nodeId, label, linkedNodes, filename, color) {
     var payload = {
         node_id: nodeId,
         label: label,
         linked_nodes: linkedNodes,
         filename: filename
     };
+    if (color) {
+        payload.color = color;
+    }
     
     fetch('/api/file-node', {
         method: 'PUT',
@@ -616,8 +635,9 @@ function syncFileNodeToAPI(node) {
     var label = node.data('label') || '';
     var filename = node.data('fileName') || '';
     var linkedNodes = getLinkedNodes(node);
+    var color = node.data('color') || null;
     
-    updateFileNodeInAPI(nodeId, label, linkedNodes, filename);
+    updateFileNodeInAPI(nodeId, label, linkedNodes, filename, color);
 }
 
 // Function to update file node info for multiple nodes
@@ -749,6 +769,7 @@ function createContextMenu(x, y, node) {
     }
     
     menuItems.push(
+        { label: 'Change Color', action: function() { changeNodeColor(node); } },
         { label: 'Resize', action: function() { startResizing(node, 0, 0); } },
         { label: 'Link', action: function() { startLinking(node); } },
         { label: 'Delete', action: function() { deleteNode(node); } }
@@ -841,6 +862,176 @@ function editNode(node) {
             }
         }, 200);
     });
+}
+
+// Function to change node color
+function changeNodeColor(node) {
+    // Get current color or default to grey
+    var currentColor = node.data('color') || 'grey';
+    
+    // Remove existing color picker if any
+    var existingPicker = document.getElementById('color-picker-container');
+    if (existingPicker) {
+        existingPicker.remove();
+    }
+    
+    // Create color picker container
+    var colorPicker = document.createElement('div');
+    colorPicker.id = 'color-picker-container';
+    colorPicker.style.position = 'fixed';
+    colorPicker.style.top = '50%';
+    colorPicker.style.left = '50%';
+    colorPicker.style.transform = 'translate(-50%, -50%)';
+    colorPicker.style.backgroundColor = '#ffffff';
+    colorPicker.style.border = '2px solid #3498db';
+    colorPicker.style.borderRadius = '12px';
+    colorPicker.style.padding = '24px';
+    colorPicker.style.zIndex = '2000';
+    colorPicker.style.boxShadow = '0 12px 32px rgba(0, 0, 0, 0.3)';
+    colorPicker.style.minWidth = '300px';
+    
+    // Title
+    var title = document.createElement('h3');
+    title.textContent = 'Change Node Color';
+    title.style.marginTop = '0';
+    title.style.marginBottom = '16px';
+    title.style.color = '#2c3e50';
+    title.style.fontSize = '18px';
+    colorPicker.appendChild(title);
+    
+    // Color input
+    var colorInput = document.createElement('input');
+    colorInput.type = 'color';
+    colorInput.value = currentColor === 'grey' ? '#808080' : currentColor;
+    colorInput.style.width = '100%';
+    colorInput.style.height = '50px';
+    colorInput.style.border = '2px solid #ddd';
+    colorInput.style.borderRadius = '8px';
+    colorInput.style.cursor = 'pointer';
+    colorInput.style.marginBottom = '16px';
+    colorPicker.appendChild(colorInput);
+    
+    // Preview
+    var preview = document.createElement('div');
+    preview.style.width = '100%';
+    preview.style.height = '40px';
+    preview.style.borderRadius = '8px';
+    preview.style.border = '2px solid #ddd';
+    preview.style.marginBottom = '16px';
+    preview.style.backgroundColor = colorInput.value;
+    colorPicker.appendChild(preview);
+    
+    // Update preview when color changes
+    colorInput.addEventListener('input', function() {
+        preview.style.backgroundColor = colorInput.value;
+    });
+    
+    // Preset colors
+    var presetColors = [
+        { name: 'Grey', value: '#808080' },
+        { name: 'Blue', value: '#3498db' },
+        { name: 'Green', value: '#27ae60' },
+        { name: 'Red', value: '#e74c3c' },
+        { name: 'Orange', value: '#f39c12' },
+        { name: 'Purple', value: '#9b59b6' },
+        { name: 'Yellow', value: '#f1c40f' },
+        { name: 'Teal', value: '#1abc9c' }
+    ];
+    
+    var presetContainer = document.createElement('div');
+    presetContainer.style.display = 'grid';
+    presetContainer.style.gridTemplateColumns = 'repeat(4, 1fr)';
+    presetContainer.style.gap = '8px';
+    presetContainer.style.marginBottom = '16px';
+    
+    presetColors.forEach(function(preset) {
+        var presetBtn = document.createElement('button');
+        presetBtn.style.width = '100%';
+        presetBtn.style.height = '30px';
+        presetBtn.style.backgroundColor = preset.value;
+        presetBtn.style.border = '2px solid #ddd';
+        presetBtn.style.borderRadius = '4px';
+        presetBtn.style.cursor = 'pointer';
+        presetBtn.title = preset.name;
+        presetBtn.addEventListener('click', function() {
+            colorInput.value = preset.value;
+            preview.style.backgroundColor = preset.value;
+        });
+        presetBtn.addEventListener('mouseenter', function() {
+            presetBtn.style.borderColor = '#3498db';
+            presetBtn.style.transform = 'scale(1.05)';
+        });
+        presetBtn.addEventListener('mouseleave', function() {
+            presetBtn.style.borderColor = '#ddd';
+            presetBtn.style.transform = 'scale(1)';
+        });
+        presetContainer.appendChild(presetBtn);
+    });
+    
+    colorPicker.appendChild(presetContainer);
+    
+    // Close on background click - create overlay first
+    var overlay = document.createElement('div');
+    overlay.style.position = 'fixed';
+    overlay.style.top = '0';
+    overlay.style.left = '0';
+    overlay.style.width = '100%';
+    overlay.style.height = '100%';
+    overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+    overlay.style.zIndex = '1999';
+    overlay.addEventListener('click', function() {
+        overlay.remove();
+        colorPicker.remove();
+    });
+    
+    // Buttons container
+    var buttonsContainer = document.createElement('div');
+    buttonsContainer.style.display = 'flex';
+    buttonsContainer.style.gap = '8px';
+    buttonsContainer.style.justifyContent = 'flex-end';
+    
+    // Cancel button
+    var cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.style.padding = '10px 20px';
+    cancelBtn.style.backgroundColor = '#95a5a6';
+    cancelBtn.style.color = '#ffffff';
+    cancelBtn.style.border = 'none';
+    cancelBtn.style.borderRadius = '6px';
+    cancelBtn.style.cursor = 'pointer';
+    cancelBtn.style.fontSize = '14px';
+    cancelBtn.style.fontWeight = 'bold';
+    cancelBtn.addEventListener('click', function() {
+        overlay.remove();
+        colorPicker.remove();
+    });
+    buttonsContainer.appendChild(cancelBtn);
+    
+    // Apply button
+    var applyBtn = document.createElement('button');
+    applyBtn.textContent = 'Apply';
+    applyBtn.style.padding = '10px 20px';
+    applyBtn.style.backgroundColor = '#3498db';
+    applyBtn.style.color = '#ffffff';
+    applyBtn.style.border = 'none';
+    applyBtn.style.borderRadius = '6px';
+    applyBtn.style.cursor = 'pointer';
+    applyBtn.style.fontSize = '14px';
+    applyBtn.style.fontWeight = 'bold';
+    applyBtn.addEventListener('click', function() {
+        var newColor = colorInput.value;
+        node.data('color', newColor);
+        // Update node in API
+        syncNodeToAPI(node);
+        overlay.remove();
+        colorPicker.remove();
+    });
+    buttonsContainer.appendChild(applyBtn);
+    
+    colorPicker.appendChild(buttonsContainer);
+    
+    document.body.appendChild(overlay);
+    document.body.appendChild(colorPicker);
 }
 
 // Function to delete node
@@ -1298,7 +1489,8 @@ cy.on('tap', function(evt) {
                                 if (isTextNode(newNode)) {
                                     setTimeout(function() {
                                         var linkedNodes = getLinkedNodes(newNode);
-                                        saveTextNodeToAPI(nodeId, input, linkedNodes);
+                                        var color = newNode.data('color') || null;
+                                        saveTextNodeToAPI(nodeId, input, linkedNodes, color);
                                     }, 100);
                                 }
                             }
