@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from pathlib import Path
 import shutil
@@ -8,6 +8,8 @@ import uvicorn
 import json
 from datetime import datetime
 from typing import List
+from chat_manager import create_qa_chain
+from db_manager import vectorize_all_data, load_config, clear_data_folder
 
 app = FastAPI()
 
@@ -79,6 +81,9 @@ class FileNodeRequest(BaseModel):
     label: str
     linked_nodes: List[LinkedNode] = []
     filename: str  # The actual filename on disk
+
+class AskRequest(BaseModel):
+    query: str
 
 # API routes must be defined before the catch-all route
 @app.post("/api/upload")
@@ -442,6 +447,66 @@ async def delete_file_node(node_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error deleting file node: {str(e)}")
 
+@app.post("/api/ask")
+async def ask_question(request: AskRequest):
+    """Process a question using the QA chain and return streaming response"""
+    try:
+        query = request.query.strip()
+        if not query:
+            raise HTTPException(status_code=400, detail="Query cannot be empty")
+        
+        # Load config
+        config = load_config()
+        
+        # Initialize vectorstore
+        vectorstore = vectorize_all_data(config=config)
+        
+        # Create QA chain
+        qa_chain = create_qa_chain(vectorstore, config=config)
+        
+        # Stream the answer
+        def generate_response():
+            full_answer = ""
+            try:
+                for chunk in qa_chain.stream({"input": query}):
+                    if "answer" in chunk:
+                        answer_token = chunk["answer"]
+                        if answer_token:
+                            full_answer += answer_token
+                            # Send each token as JSON
+                            yield json.dumps({"type": "token", "content": answer_token}) + "\n"
+                    
+                    if "context" in chunk and chunk["context"]:
+                        # Send context info if available
+                        context_docs = chunk["context"]
+                        sources = set()
+                        for doc in context_docs:
+                            if hasattr(doc, 'metadata'):
+                                source = doc.metadata.get('source', 'Unknown')
+                                sources.add(source)
+                        if sources:
+                            sources_list = list(sources)[:5]  # Limit to 5 sources
+                            yield json.dumps({"type": "sources", "sources": sources_list}) + "\n"
+                
+                # Send final answer summary
+                yield json.dumps({"type": "done", "answer": full_answer}) + "\n"
+            except Exception as e:
+                yield json.dumps({"type": "error", "message": str(e)}) + "\n"
+            finally:
+                # Clean up: delete the vector store to free memory
+                try:
+                    if hasattr(vectorstore, 'delete_collection'):
+                        vectorstore.delete_collection()
+                except:
+                    pass
+        
+        return StreamingResponse(generate_response(), media_type="application/x-ndjson")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing question: {str(e)}")
+
 @app.get("/")
 async def read_root():
     """Serve the main HTML page"""
@@ -469,5 +534,6 @@ async def serve_static_files(file_path: str):
         raise HTTPException(status_code=404, detail="File not found")
 
 if __name__ == "__main__":
+    clear_data_folder()
     uvicorn.run(app, host="0.0.0.0", port=8000)
 

@@ -171,10 +171,174 @@ function handleCommand(command) {
         
         document.body.appendChild(fileInput);
         fileInput.click();
+    } else if (command.startsWith('/ask ')) {
+        var query = command.substring(5).trim(); // Remove '/ask ' prefix
+        if (query) {
+            askQuestion(query);
+        } else {
+            alert('Please provide a question after /ask');
+        }
     } else if (command.startsWith('/')) {
         console.log('Unknown command:', command);
         alert('Unknown command: ' + command);
     }
+}
+
+// Function to ask a question and display response
+function askQuestion(query) {
+    // Create a modal to display the response
+    var modal = document.createElement('div');
+    modal.style.position = 'fixed';
+    modal.style.top = '0';
+    modal.style.left = '0';
+    modal.style.width = '100%';
+    modal.style.height = '100%';
+    modal.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+    modal.style.zIndex = '2000';
+    modal.style.display = 'flex';
+    modal.style.justifyContent = 'center';
+    modal.style.alignItems = 'center';
+    
+    var modalContent = document.createElement('div');
+    modalContent.style.backgroundColor = '#ffffff';
+    modalContent.style.borderRadius = '12px';
+    modalContent.style.padding = '24px';
+    modalContent.style.maxWidth = '800px';
+    modalContent.style.width = '90%';
+    modalContent.style.maxHeight = '80vh';
+    modalContent.style.overflow = 'auto';
+    modalContent.style.boxShadow = '0 12px 32px rgba(0, 0, 0, 0.3)';
+    
+    var title = document.createElement('h2');
+    title.textContent = 'Question: ' + query;
+    title.style.marginTop = '0';
+    title.style.marginBottom = '16px';
+    title.style.color = '#2c3e50';
+    title.style.fontSize = '20px';
+    
+    var answerDiv = document.createElement('div');
+    answerDiv.id = 'answer-content';
+    answerDiv.style.marginTop = '16px';
+    answerDiv.style.padding = '16px';
+    answerDiv.style.backgroundColor = '#f8f9fa';
+    answerDiv.style.borderRadius = '8px';
+    answerDiv.style.minHeight = '100px';
+    answerDiv.style.color = '#2c3e50';
+    answerDiv.style.fontSize = '16px';
+    answerDiv.style.lineHeight = '1.6';
+    answerDiv.textContent = 'Thinking...';
+    
+    var closeButton = document.createElement('button');
+    closeButton.textContent = 'Close';
+    closeButton.style.marginTop = '16px';
+    closeButton.style.padding = '10px 20px';
+    closeButton.style.backgroundColor = '#3498db';
+    closeButton.style.color = '#ffffff';
+    closeButton.style.border = 'none';
+    closeButton.style.borderRadius = '6px';
+    closeButton.style.cursor = 'pointer';
+    closeButton.style.fontSize = '14px';
+    closeButton.style.fontWeight = 'bold';
+    
+    closeButton.addEventListener('click', function() {
+        document.body.removeChild(modal);
+    });
+    
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) {
+            document.body.removeChild(modal);
+        }
+    });
+    
+    modalContent.appendChild(title);
+    modalContent.appendChild(answerDiv);
+    modalContent.appendChild(closeButton);
+    modal.appendChild(modalContent);
+    document.body.appendChild(modal);
+    
+    // Send request to backend
+    fetch('/api/ask', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ query: query })
+    })
+    .then(function(response) {
+        if (!response.ok) {
+            throw new Error('Failed to get answer: ' + response.statusText);
+        }
+        
+        var reader = response.body.getReader();
+        var decoder = new TextDecoder();
+        var fullAnswer = '';
+        var buffer = '';
+        
+        function readStream() {
+            reader.read().then(function(result) {
+                if (result.done) {
+                    // Process any remaining buffer
+                    if (buffer.trim()) {
+                        try {
+                            var data = JSON.parse(buffer.trim());
+                            if (data.type === 'token') {
+                                fullAnswer += data.content;
+                                answerDiv.textContent = fullAnswer;
+                            } else if (data.type === 'done') {
+                                answerDiv.textContent = data.answer || fullAnswer;
+                            }
+                        } catch (e) {
+                            console.error('Error parsing final buffer:', e);
+                        }
+                    }
+                    return;
+                }
+                
+                buffer += decoder.decode(result.value, { stream: true });
+                var lines = buffer.split('\n');
+                
+                // Keep the last incomplete line in buffer
+                buffer = lines.pop() || '';
+                
+                for (var i = 0; i < lines.length; i++) {
+                    var line = lines[i].trim();
+                    if (!line) continue;
+                    
+                    try {
+                        var data = JSON.parse(line);
+                        
+                        if (data.type === 'token') {
+                            fullAnswer += data.content;
+                            answerDiv.textContent = fullAnswer;
+                        } else if (data.type === 'sources') {
+                            var sourcesText = '\n\nSources: ' + data.sources.join(', ');
+                            answerDiv.textContent = fullAnswer + sourcesText;
+                        } else if (data.type === 'done') {
+                            answerDiv.textContent = data.answer || fullAnswer;
+                        } else if (data.type === 'error') {
+                            answerDiv.textContent = 'Error: ' + data.message;
+                            answerDiv.style.color = '#e74c3c';
+                        }
+                    } catch (e) {
+                        console.error('Error parsing stream data:', e, 'Line:', line);
+                    }
+                }
+                
+                readStream();
+            }).catch(function(error) {
+                console.error('Stream error:', error);
+                answerDiv.textContent = 'Error: ' + error.message;
+                answerDiv.style.color = '#e74c3c';
+            });
+        }
+        
+        readStream();
+    })
+    .catch(function(error) {
+        console.error('Error asking question:', error);
+        answerDiv.textContent = 'Error: ' + error.message;
+        answerDiv.style.color = '#e74c3c';
+    });
 }
 
 // Function to create an uneditable file node

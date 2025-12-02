@@ -193,6 +193,25 @@ def split_and_combine_for_embedding(
     return text_splitter.split_documents(all_documents)
 
 data_json_path = Path(__file__).parent.parent.parent / "data" / "data.json"
+
+def clear_data_folder():
+    """Delete all files from the 'data' directory (excluding subdirectories)."""
+    data_dir = Path(data_json_path).parent
+    if not data_dir.exists() or not data_dir.is_dir():
+        print(f"'data' directory not found at: {data_dir.resolve()}")
+        return
+
+    removed = 0
+    for item in data_dir.iterdir():
+        if item.is_file():
+            try:
+                item.unlink()
+                removed += 1
+            except Exception as e:
+                print(f"Could not delete {item}: {e}")
+    print(f"Cleared {removed} files from '{data_dir.resolve()}'.")
+
+
 def build_text_from_data_json() -> str:
     """
     Iterates through "texts" in data/data.json and builds a combined text.
