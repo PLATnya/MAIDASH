@@ -2,7 +2,7 @@ from langchain_ollama import OllamaLLM
 from langchain_core.prompts import PromptTemplate
 from langchain_classic.chains import create_retrieval_chain
 from langchain_classic.chains.combine_documents import create_stuff_documents_chain
-from db_manager import get_vector_store, load_config
+from db_manager import get_vector_store, load_config, update_vectors
 from typing import Dict, Any
 import json
 
@@ -181,6 +181,8 @@ def ask_question_cli(query):
 
 
 if __name__ == "__main__":
+    update_vectors()
+    update_vectors()
     question = input("You: ").strip()
     print("Initializing QA chain with Ollama...")
 

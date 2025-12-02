@@ -9,7 +9,7 @@ import json
 from datetime import datetime
 from typing import List
 from chat_manager import ErrorProcessingQuestionError, NoQueryError, ask_question_stream
-from db_manager import clear_data_folder
+from db_manager import clear_data_folder, on_data_updated
 
 app = FastAPI()
 
@@ -132,6 +132,9 @@ async def upload_file(file: UploadFile = File(...)):
         # Save updated data structure
         save_files_json(data)
         
+        # Notify that data was updated
+        on_data_updated()
+        
         return JSONResponse({
             "message": "File uploaded successfully",
             "filename": file_path.name,
@@ -169,6 +172,9 @@ async def delete_file(request: DeleteFileRequest):
         data = load_files_json()
         data["files"] = [f for f in data["files"] if f.get("filename") != filename]
         save_files_json(data)
+        
+        # Notify that data was updated
+        on_data_updated()
         
         return JSONResponse({
             "message": "File deleted successfully",
@@ -213,6 +219,9 @@ async def create_text_node(request: TextNodeRequest):
         
         # Save updated data structure
         save_files_json(data)
+        
+        # Notify that data was updated
+        on_data_updated()
         
         return JSONResponse({
             "message": "Text node saved successfully",
@@ -277,6 +286,9 @@ async def update_text_node(request: TextNodeRequest):
         # Save updated data structure
         save_files_json(data)
         
+        # Notify that data was updated
+        on_data_updated()
+        
         return JSONResponse({
             "message": "Text node updated successfully",
             "node_id": request.node_id
@@ -313,6 +325,9 @@ async def delete_text_node(node_id: str):
         
         # Save updated data structure
         save_files_json(data)
+        
+        # Notify that data was updated
+        on_data_updated()
         
         if len(data["texts"]) < initial_length:
             return JSONResponse({
@@ -365,6 +380,9 @@ async def create_file_node(request: FileNodeRequest):
         # Save updated data structure
         save_files_json(data)
         
+        # Notify that data was updated
+        on_data_updated()
+        
         return JSONResponse({
             "message": "File node saved successfully",
             "node_id": request.node_id
@@ -411,6 +429,9 @@ async def update_file_node(request: FileNodeRequest):
         # Save updated data structure
         save_files_json(data)
         
+        # Notify that data was updated
+        on_data_updated()
+        
         return JSONResponse({
             "message": "File node updated successfully",
             "node_id": request.node_id
@@ -456,6 +477,9 @@ async def delete_file_node(node_id: str):
         
         # Save updated data structure
         save_files_json(data)
+        
+        # Notify that data was updated
+        on_data_updated()
         
         if file_index is not None:
             return JSONResponse({

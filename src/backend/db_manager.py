@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from langchain_community.document_loaders import PDFMinerLoader
 from langchain_ollama import OllamaEmbeddings
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 import os
 from dotenv import load_dotenv
 import uuid
@@ -122,18 +122,15 @@ def vectorize_document_chunks(
         collection_name = f"collection_{uuid.uuid4().hex[:8]}"
     
     print(f"Creating ChromaDB vector store with collection: {collection_name}...")
-    print(f"Persist directory: {persist_directory}")
     
-    # Create ChromaDB vector store
-    vectorstore = Chroma.from_documents(
-        documents=documents,
-        embedding=embeddings,
+    vector_store = Chroma(
         collection_name=collection_name,
-        persist_directory=persist_directory
+        embedding_function=embeddings,
     )
-    
+    vector_store.add_documents(documents)
+    # Create ChromaDB vector store
     print(f"ChromaDB vector store created with {len(documents)} document chunks\n")
-    return vectorstore
+    return vector_store
 
 def split_and_combine_for_embedding(
     documents: List[Document] = None,
@@ -341,6 +338,15 @@ def get_buff_vector_store():
     global BUFF_VECTOR_STORE
     return BUFF_VECTOR_STORE
 
+def update_vectors():
+    config = load_config()
+    vectorize_all_data(config=config)
+
+def on_data_updated():
+    """Called when data.json is updated to refresh the vector store"""
+    update_vectors()
+
+    
 def get_vector_store(config: Dict[str, Any] = None) -> Chroma:
     global BUFF_VECTOR_STORE
     if BUFF_VECTOR_STORE is None:
