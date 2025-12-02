@@ -14,7 +14,7 @@ import shutil
 
 # Default config path
 CONFIG_PATH = Path(__file__).parent / "config.json"
-
+BUFF_VECTOR_STORE = None
 def load_config(config_path: Path = None) -> Dict[str, Any]:
     """
     Load configuration from JSON file.
@@ -337,11 +337,44 @@ def build_pdf_from_data_json() -> List[Document]:
 
     return result_documents
 
+def get_buff_vector_store():
+    global BUFF_VECTOR_STORE
+    return BUFF_VECTOR_STORE
+
+def get_vector_store(config: Dict[str, Any] = None) -> Chroma:
+    global BUFF_VECTOR_STORE
+    if BUFF_VECTOR_STORE is None:
+        return vectorize_all_data(config=config)
+    return BUFF_VECTOR_STORE
 
 def vectorize_all_data(config: Dict[str, Any] = None) -> None:
+    global BUFF_VECTOR_STORE
+    if BUFF_VECTOR_STORE is not None:
+        try:
+            if hasattr(BUFF_VECTOR_STORE, 'delete_collection'):
+                BUFF_VECTOR_STORE.delete_collection()
+                BUFF_VECTOR_STORE = None
+        except:
+            pass
+    
     texts = build_text_from_data_json()
     pdfs = build_pdf_from_data_json()
-    return vectorize_document_chunks(split_and_combine_for_embedding(pdfs, [texts]), config=config)
+    all_data = split_and_combine_for_embedding(pdfs, [texts])
+    # INSERT_YOUR_CODE
+    # Write all data to txt file for debugging/inspection
+    output_path = "all_data_dump.txt"
+    try:
+        with open(output_path, "w", encoding="utf-8") as f:
+            for chunk in all_data:
+                f.write(str(chunk))
+                f.write("\n" + "-" * 80 + "\n")
+        print(f"Dumped all data to {output_path}")
+    except Exception as e:
+        print(f"Failed to write all_data to file: {e}")
+
+
+    BUFF_VECTOR_STORE = vectorize_document_chunks(all_data, config=config)
+    return BUFF_VECTOR_STORE
 
 if __name__ == "__main__":
     if "--clear" in sys.argv:

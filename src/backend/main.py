@@ -8,8 +8,8 @@ import uvicorn
 import json
 from datetime import datetime
 from typing import List
-from chat_manager import create_qa_chain
-from db_manager import vectorize_all_data, load_config, clear_data_folder
+from chat_manager import ErrorProcessingQuestionError, NoQueryError, ask_question_stream
+from db_manager import clear_data_folder
 
 app = FastAPI()
 
@@ -475,60 +475,15 @@ async def ask_question(request: AskRequest):
     """Process a question using the QA chain and return streaming response"""
     try:
         query = request.query.strip()
-        if not query:
-            raise HTTPException(status_code=400, detail="Query cannot be empty")
-        
-        # Load config
-        config = load_config()
-        
-        # Initialize vectorstore
-        vectorstore = vectorize_all_data(config=config)
-        
-        # Create QA chain
-        qa_chain = create_qa_chain(vectorstore, config=config)
-        
-        # Stream the answer
-        def generate_response():
-            full_answer = ""
-            try:
-                for chunk in qa_chain.stream({"input": query}):
-                    if "answer" in chunk:
-                        answer_token = chunk["answer"]
-                        if answer_token:
-                            full_answer += answer_token
-                            # Send each token as JSON
-                            yield json.dumps({"type": "token", "content": answer_token}) + "\n"
-                    
-                    if "context" in chunk and chunk["context"]:
-                        # Send context info if available
-                        context_docs = chunk["context"]
-                        sources = set()
-                        for doc in context_docs:
-                            if hasattr(doc, 'metadata'):
-                                source = doc.metadata.get('source', 'Unknown')
-                                sources.add(source)
-                        if sources:
-                            sources_list = list(sources)[:5]  # Limit to 5 sources
-                            yield json.dumps({"type": "sources", "sources": sources_list}) + "\n"
-                
-                # Send final answer summary
-                yield json.dumps({"type": "done", "answer": full_answer}) + "\n"
-            except Exception as e:
-                yield json.dumps({"type": "error", "message": str(e)}) + "\n"
-            finally:
-                # Clean up: delete the vector store to free memory
-                try:
-                    if hasattr(vectorstore, 'delete_collection'):
-                        vectorstore.delete_collection()
-                except:
-                    pass
-        
-        return StreamingResponse(generate_response(), media_type="application/x-ndjson")
-        
-    except HTTPException:
-        raise
+        response = ask_question_stream(query)
+        return StreamingResponse(response, media_type="application/x-ndjson")
+
+    except NoQueryError:
+        raise HTTPException(status_code=400, detail="Query cannot be empty")
+    except ErrorProcessingQuestionError:
+        raise HTTPException(status_code=500, detail="Error processing question")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing question: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error asking question: {str(e)}")
 
 @app.get("/")
 async def read_root():

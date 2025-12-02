@@ -2,8 +2,9 @@ from langchain_ollama import OllamaLLM
 from langchain_core.prompts import PromptTemplate
 from langchain_classic.chains import create_retrieval_chain
 from langchain_classic.chains.combine_documents import create_stuff_documents_chain
-from db_manager import vectorize_all_data, load_config
+from db_manager import get_vector_store, load_config
 from typing import Dict, Any
+import json
 
 def create_qa_chain(vectorstore, config: Dict[str, Any] = None):
     """
@@ -81,14 +82,65 @@ Answer:"""
 #     compressed_docs = compression_retriever.invoke(question)
 #     return question_answering(llm, compressed_docs, vectordb, question)
 
-if __name__ == "__main__":
-    question = input("You: ").strip()
-    print("Initializing QA chain with Ollama...")
-    
-    # Load config once
+class NoQueryError(Exception):
+    pass
+
+class ErrorProcessingQuestionError(Exception):
+    pass
+
+def ask_question_stream(query):
+    try:
+        if not query:
+            raise NoQueryError()
+        
+        # Load config
+        config = load_config()
+        
+        # Initialize vectorstore
+        vectorstore = get_vector_store(config=config)
+        
+        # Create QA chain
+        qa_chain = create_qa_chain(vectorstore, config=config)
+        
+        # Stream the answer
+        def generate_response():
+            full_answer = ""
+            try:
+                for chunk in qa_chain.stream({"input": query}):
+                    if "answer" in chunk:
+                        answer_token = chunk["answer"]
+                        if answer_token:
+                            full_answer += answer_token
+                            # Send each token as JSON
+                            yield json.dumps({"type": "token", "content": answer_token}) + "\n"
+                    
+                    # if "context" in chunk and chunk["context"]:
+                    #     # Send context info if available
+                    #     context_docs = chunk["context"]
+                    #     sources = set()
+                    #     for doc in context_docs:
+                    #         if hasattr(doc, 'metadata'):
+                    #             source = doc.metadata.get('source', 'Unknown')
+                    #             sources.add(source)
+                    #     if sources:
+                    #         sources_list = list(sources)[:5]  # Limit to 5 sources
+                    #         yield json.dumps({"type": "sources", "sources": sources_list}) + "\n"
+                
+                # Send final answer summary
+                yield json.dumps({"type": "done", "answer": full_answer}) + "\n"
+            except Exception as e:
+                yield json.dumps({"type": "error", "message": str(e)}) + "\n"
+        
+        return generate_response()
+    except Exception as e:
+        raise ErrorProcessingQuestionError(f"Error processing question: {str(e)}")
+
+
+def ask_question_cli(query):
+        # Load config once
     config = load_config()
     
-    vectorstore = vectorize_all_data(config=config)
+    vectorstore = get_vector_store(config=config)
     qa_chain = create_qa_chain(vectorstore, config=config)
 
     print("Thinking...\nBot: ", end="", flush=True)
@@ -97,7 +149,7 @@ if __name__ == "__main__":
     full_answer = ""
     context_docs = None
     
-    for chunk in qa_chain.stream({"input": question}):
+    for chunk in qa_chain.stream({"input": query}):
         # The chunk structure from retrieval chain can vary:
         # - Some chunks have "answer" with token strings
         # - Some chunks have "context" with documents
@@ -126,10 +178,10 @@ if __name__ == "__main__":
                 sources.add(source)
         for i, source in enumerate(list(sources)[:2], 1):
             print(f"  {i}. {source}")
-    
-    # Clean up: delete the vector store to free memory and ensure no persistence
-    try:
-        if hasattr(vectorstore, 'delete_collection'):
-            vectorstore.delete_collection()
-    except:
-        pass
+
+
+if __name__ == "__main__":
+    question = input("You: ").strip()
+    print("Initializing QA chain with Ollama...")
+
+    ask_question_cli(question)
