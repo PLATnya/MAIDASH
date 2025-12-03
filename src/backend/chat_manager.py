@@ -1,21 +1,21 @@
-from langchain_ollama import OllamaLLM
-from langchain_core.prompts import PromptTemplate
-from langchain_classic.chains import create_retrieval_chain
-from langchain_classic.chains.combine_documents import create_stuff_documents_chain
-from db_manager import get_vector_store_async, load_config, wait_for_vectorization_if_ongoing
+from langchain_ollama import ChatOllama
+from db_manager import get_vector_store_async, load_config, wait_for_vectorization_if_ongoing, update_vectors_async
 from typing import Dict, Any
 import json
+from langchain.agents import create_agent
+from langchain_core.tools import StructuredTool
+from langchain_core.messages import HumanMessage
 
-def create_qa_chain(vectorstore, config: Dict[str, Any] = None):
+def create_rag_agent(vectorstore, config: Dict[str, Any] = None):
     """
-    Create a Retrieval QA chain using Ollama LLM.
+    Create a RAG agent using LangChain agent framework with retrieval tool.
     
     Args:
         vectorstore: ChromaDB vectorstore instance
         config: Configuration dictionary (if None, loads from config.json)
     
     Returns:
-        QA chain for question answering
+        Agent executor for question answering with RAG
     """
     # Load config if not provided
     if config is None:
@@ -26,41 +26,60 @@ def create_qa_chain(vectorstore, config: Dict[str, Any] = None):
     model_name = llm_config.get("model_name", "deepseek-v3.1:671b-cloud")
     temperature = llm_config.get("temperature", 0.7)
     
-    # Initialize Ollama LLM
-    llm = OllamaLLM(model=model_name, temperature=temperature)
-    
-    # Create a custom prompt template
-    prompt_template = """Use the following pieces of context to answer the question at the end. 
-    Answer as small as possible, don't be verbose.
-If you don't know the answer, just say that you don't know, don't try to make up an answer.
+    # Initialize Ollama model
+    # New API requires ChatOllama (chat model), old API can use OllamaLLM
 
-Context: {context}
-
-Question: {input}
-
-Answer:"""
-    
-    prompt = PromptTemplate(
-        template=prompt_template,
-        input_variables=["context", "input"]
-    )
-    
-    # Create document chain
-    document_chain = create_stuff_documents_chain(llm, prompt)
-    
+    llm = ChatOllama(model=model_name, temperature=temperature)
     # Get retriever settings from config
     retriever_config = config.get("retriever", {})
     search_type = retriever_config.get("search_type", "similarity")
     search_kwargs = retriever_config.get("search_kwargs", {"k": 5})
     
-    # Create retrieval chain
+    # Create retriever
     retriever = vectorstore.as_retriever(
         search_type=search_type,
         search_kwargs=search_kwargs
     )
-    qa_chain = create_retrieval_chain(retriever, document_chain)
     
-    return qa_chain
+    # Create custom retrieval tool using StructuredTool
+    # This works better with the new LangChain 1.1.0 agent API
+    def search_documents(query: str) -> str:
+        """Search through documents to find information relevant to the question.
+        
+        Args:
+            query: The search query to find relevant documents.
+            
+        Returns:
+            A string containing the relevant document contents separated by newlines.
+        """
+        docs = retriever.invoke(query)
+        # Combine document contents with separators
+        result = "\n-----------------------------------------\n".join([doc.page_content for doc in docs])
+        return result
+    
+    retrieval_tool = StructuredTool.from_function(
+        func=search_documents,
+        name="document_search",
+        description="Search through documents to find information relevant to the question. Use this tool when you need to find specific information from the knowledge base. Input should be a search query string."
+    )
+
+    # LangChain 1.1.0+ API - use create_agent which returns a graph
+    system_prompt = """You are a helpful assistant that answers questions using information from a knowledge base.
+When you need information to answer a question, use the document_search tool to retrieve relevant documents.
+Answer as short as possible, don't be verbose.
+If you don't know the answer based on the retrieved documents, just say that you don't know, don't try to make up an answer."""
+    
+    # Create agent graph using new API
+    agent_graph = create_agent(
+        model=llm,
+        tools=[retrieval_tool],
+        system_prompt=system_prompt,
+        interrupt_before=[],  # Don't interrupt before any steps
+        interrupt_after=[],   # Don't interrupt after any steps
+        debug=False
+    )
+    
+    return agent_graph
 
 
 # def mmr_search(question, vectordb, model_name: str = "deepseek-v3.1:671b-cloud"):
@@ -103,32 +122,53 @@ async def ask_question_stream(query):
         # Initialize vectorstore
         vectorstore = await get_vector_store_async(config=config)
         
-        # Create QA chain
-        qa_chain = create_qa_chain(vectorstore, config=config)
+        # Create RAG agent
+        agent_executor = create_rag_agent(vectorstore, config=config)
         
         # Stream the answer
         def generate_response():
             full_answer = ""
             try:
-                for chunk in qa_chain.stream({"input": query}):
-                    if "answer" in chunk:
-                        answer_token = chunk["answer"]
-                        if answer_token:
-                            full_answer += answer_token
-                            # Send each token as JSON
-                            yield json.dumps({"type": "token", "content": answer_token}) + "\n"
-                    
-                    # if "context" in chunk and chunk["context"]:
-                    #     # Send context info if available
-                    #     context_docs = chunk["context"]
-                    #     sources = set()
-                    #     for doc in context_docs:
-                    #         if hasattr(doc, 'metadata'):
-                    #             source = doc.metadata.get('source', 'Unknown')
-                    #             sources.add(source)
-                    #     if sources:
-                    #         sources_list = list(sources)[:5]  # Limit to 5 sources
-                    #         yield json.dumps({"type": "sources", "sources": sources_list}) + "\n"
+                input_data = {"messages": [HumanMessage(content=query)]}
+
+                
+                # Stream agent execution
+                for chunk in agent_executor.stream(input_data):
+                    # The graph streams state updates
+                    for node_name, node_output in chunk.items():
+                        if node_name == "agent" and "messages" in node_output:
+                            # Extract messages from agent node
+                            messages = node_output.get("messages", [])
+                            for msg in messages:
+                                if hasattr(msg, 'content') and msg.content:
+                                    content = str(msg.content)
+                                    if content and content.strip():
+                                        full_answer += content
+                                        yield json.dumps({"type": "token", "content": content}) + "\n"
+                        elif "messages" in node_output:
+                            # Check other nodes for messages
+                            messages = node_output.get("messages", [])
+                            for msg in messages:
+                                if hasattr(msg, 'content') and msg.content:
+                                    content = str(msg.content)
+                                    if content and content.strip():
+                                        full_answer += content
+                                        yield json.dumps({"type": "token", "content": content}) + "\n"
+
+                
+                # If no streaming tokens were captured, invoke synchronously and stream manually
+                if not full_answer:
+                    result = agent_executor.invoke(input_data)
+                    # Extract final message from graph result
+                    if "messages" in result:
+                        for msg in result["messages"]:
+                            if hasattr(msg, 'content') and msg.content:
+                                output = str(msg.content)
+                                if output:
+                                    for char in output:
+                                        full_answer += char
+                                        yield json.dumps({"type": "token", "content": char}) + "\n"
+
                 
                 # Send final answer summary
                 yield json.dumps({"type": "done", "answer": full_answer}) + "\n"
@@ -148,49 +188,67 @@ async def ask_question_cli(query):
     config = load_config()
     
     vectorstore = await get_vector_store_async(config=config)
-    qa_chain = create_qa_chain(vectorstore, config=config)
+    agent_executor = create_rag_agent(vectorstore, config=config)
 
     print("Thinking...\nBot: ", end="", flush=True)
     
     # Stream the answer tokens
     full_answer = ""
-    context_docs = None
+    sources = set()
     
-    for chunk in qa_chain.stream({"input": query}):
-        # The chunk structure from retrieval chain can vary:
-        # - Some chunks have "answer" with token strings
-        # - Some chunks have "context" with documents
-        # - Answer tokens are streamed incrementally
-        if "answer" in chunk:
-            answer_token = chunk["answer"]
-            # Only print if it's a new token (not empty)
-            if answer_token:
-                print(answer_token, end="", flush=True)
-                full_answer += answer_token
+    try:
+        input_data = {"messages": [HumanMessage(content=query)]}
         
-        # Capture context documents (may appear in any chunk)
-        if "context" in chunk and chunk["context"]:
-            context_docs = chunk["context"]
+        # Stream agent execution
+        for chunk in agent_executor.stream(input_data):
+            for node_name, node_output in chunk.items():
+                if node_name == "agent" and "messages" in node_output:
+                    messages = node_output.get("messages", [])
+                    for msg in messages:
+                        if hasattr(msg, 'content') and msg.content:
+                            content = str(msg.content)
+                            if content and content.strip():
+                                print(content, end="", flush=True)
+                                full_answer += content
+                elif "messages" in node_output:
+                    messages = node_output.get("messages", [])
+                    for msg in messages:
+                        if hasattr(msg, 'content') and msg.content:
+                            content = str(msg.content)
+                            if content and content.strip():
+                                print(content, end="", flush=True)
+                                full_answer += content
+        
+        # If no streaming output, invoke synchronously
+        if not full_answer:
+            result = agent_executor.invoke(input_data)
+            if "messages" in result:
+                for msg in result["messages"]:
+                    if hasattr(msg, 'content') and msg.content:
+                        output = str(msg.content)
+                        if output:
+                            print(output, end="", flush=True)
+                            full_answer = output
+        
+        print()  # New line after streaming
+        
+        # Extract sources from intermediate steps if available
+        # Note: With agent, sources are harder to extract directly
+        # The agent uses the retrieval tool internally
+        if sources:
+            print("\n[Sources used:]")
+            for i, source in enumerate(list(sources)[:2], 1):
+                print(f"  {i}. {source}")
+    except Exception as e:
+        print(f"\nError: {str(e)}")
+
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(update_vectors_async())
     
-    print()  # New line after streaming
+    question = input("You: ").strip()
+    print("Initializing QA chain with Ollama...")
+
     
-    # Optionally show source documents
-    if context_docs:
-        print("\n[Sources used:]")
-        # Extract unique sources from context documents
-        sources = set()
-        for doc in context_docs:
-            if hasattr(doc, 'metadata'):
-                source = doc.metadata.get('source', 'Unknown')
-                sources.add(source)
-        for i, source in enumerate(list(sources)[:2], 1):
-            print(f"  {i}. {source}")
-
-
-# if __name__ == "__main__":
-#     # update_vectors()
-#     # update_vectors()
-#     # question = input("You: ").strip()
-#     # print("Initializing QA chain with Ollama...")
-
-#     # ask_question_cli(question)
+    asyncio.run(ask_question_cli(question))
