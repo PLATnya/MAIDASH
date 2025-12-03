@@ -1,11 +1,16 @@
 from langchain_ollama import ChatOllama
 from db_manager import get_vector_store_async, load_config, wait_for_vectorization_if_ongoing, update_vectors_async
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import json
+import os
 from langchain.agents import create_agent
 from langchain_core.tools import StructuredTool
 from langchain_core.messages import HumanMessage
 from langchain.messages import AIMessage, AIMessageChunk
+try:
+    from tavily import TavilyClient
+except ImportError:
+    TavilyClient = None
 
 def create_rag_agent(vectorstore, config: Dict[str, Any] = None):
     """
@@ -63,9 +68,83 @@ def create_rag_agent(vectorstore, config: Dict[str, Any] = None):
         name="document_search",
         description="Retrieves relevant document chunks from the knowledge base. This tool ONLY retrieves context - you must use this retrieved context to generate your own answer. Do NOT return the raw tool output as your answer. Input should be a search query string."
     )
+    
+    # Create Tavily web search tool as fallback
+    tools = [retrieval_tool]
+    tavily_config = config.get("tavily", {})
+    tavily_api_key = tavily_config.get("api_key") if tavily_config.get("api_key") else os.getenv("TAVILY_API_KEY")
+    
+    if TavilyClient and tavily_api_key:
+        def search_web(query: str) -> str:
+            """Search the web using Tavily to find current information when documents don't contain the answer.
+            
+            Args:
+                query: The search query to find information on the web.
+                
+            Returns:
+                A string containing relevant web search results with content and URLs.
+            """
+            try:
+                tavily_client = TavilyClient(api_key=tavily_api_key)
+                response = tavily_client.search(
+                    query=query,
+                    search_depth="advanced",
+                    max_results=5,
+                    include_answer=True,
+                    include_raw_content=False
+                )
+                
+                # Format the response
+                results = []
+                if response.get("answer"):
+                    results.append(f"Answer: {response['answer']}")
+                
+                if response.get("results"):
+                    results.append("\nSources:")
+                    for i, result in enumerate(response["results"][:5], 1):
+                        title = result.get("title", "No title")
+                        content = result.get("content", "")
+                        url = result.get("url", "")
+                        results.append(f"\n{i}. {title}")
+                        if content:
+                            results.append(f"   {content[:300]}...")  # Limit content length
+                        if url:
+                            results.append(f"   URL: {url}")
+                
+                return "\n".join(results) if results else "No results found."
+            except Exception as e:
+                return f"Error searching web: {str(e)}"
+        
+        tavily_tool = StructuredTool.from_function(
+            func=search_web,
+            name="web_search",
+            description="Search the web for current information when the document_search tool doesn't provide sufficient information to answer the question. Use this tool ONLY when document_search fails to find relevant information. This tool returns web search results - use them as context to generate your answer, do NOT return the raw tool output."
+        )
+        tools.append(tavily_tool)
 
     # LangChain 1.1.0+ API - use create_agent which returns a graph
-    system_prompt = """You are a helpful assistant that answers questions using information from a knowledge base.
+    if len(tools) > 1:
+        # Has Tavily web search available
+        system_prompt = """You are a helpful assistant that answers questions using information from a knowledge base and web search.
+
+WORKFLOW:
+1. ALWAYS use the document_search tool FIRST to retrieve relevant context from the knowledge base
+2. The document_search tool returns raw document chunks - these are CONTEXT, not your answer
+3. Evaluate if the retrieved documents contain sufficient information to answer the question
+4. If the documents don't contain enough information or the answer is unclear, use the web_search tool to find current information from the web
+5. After receiving context (from documents and/or web), synthesize and generate your own answer based on that context
+6. DO NOT simply return or repeat the tool output - you must process it and provide a proper answer
+
+IMPORTANT: 
+- Tool outputs are context for you to use, not the final answer
+- Use web_search ONLY when document_search doesn't provide sufficient information
+- You must read the retrieved information and then provide a synthesized answer to the user's question
+
+Answer as short as possible, don't be verbose.
+If you don't know the answer after searching both documents and web, just say that you don't know, don't try to make up an answer."""
+    else:
+        # Only document search available
+        system_prompt = """You are a helpful assistant that answers questions using information from a knowledge base.
 
 WORKFLOW:
 1. ALWAYS use the document_search tool FIRST to retrieve relevant context from the knowledge base
@@ -81,7 +160,7 @@ If you don't know the answer based on the retrieved documents, just say that you
     # Create agent graph using new API
     agent_graph = create_agent(
         model=llm,
-        tools=[retrieval_tool],
+        tools=tools,
         system_prompt=system_prompt,
         interrupt_before=[],  # Don't interrupt before any steps
         interrupt_after=[],   # Don't interrupt after any steps
