@@ -112,6 +112,66 @@ function screenToGraph(screenX, screenY) {
     };
 }
 
+// Store node_id label elements
+var nodeIdLabels = {};
+
+// Function to update node_id label position
+function updateNodeIdLabel(node) {
+    var nodeId = node.id();
+    var nodePos = node.renderedPosition();
+    var containerRect = container.getBoundingClientRect();
+    var nodeHeight = node.height();
+    var zoom = cy.zoom();
+    
+    // Calculate position above the node (nodePos is in rendered coordinates)
+    var screenX = containerRect.left + nodePos.x;
+    var screenY = containerRect.top + nodePos.y - (nodeHeight / 2 + 15);
+    
+    // Get or create label element
+    var labelElement = nodeIdLabels[nodeId];
+    if (!labelElement) {
+        labelElement = document.createElement('div');
+        labelElement.className = 'node-id-label';
+        labelElement.style.position = 'absolute';
+        labelElement.style.pointerEvents = 'none';
+        labelElement.style.zIndex = '1000';
+        labelElement.style.fontSize = '11px';
+        labelElement.style.fontWeight = 'normal';
+        labelElement.style.color = '#666666';
+        labelElement.style.textAlign = 'center';
+        labelElement.style.whiteSpace = 'nowrap';
+        labelElement.style.backgroundColor = 'rgba(255, 255, 255, 0.9)';
+        labelElement.style.padding = '2px 6px';
+        labelElement.style.borderRadius = '4px';
+        labelElement.style.transform = 'translate(-50%, -100%)';
+        labelElement.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+        labelElement.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.2)';
+        container.appendChild(labelElement);
+        nodeIdLabels[nodeId] = labelElement;
+    }
+    
+    // Update text and position
+    labelElement.textContent = nodeId;
+    labelElement.style.left = screenX + 'px';
+    labelElement.style.top = screenY + 'px';
+}
+
+// Function to remove node_id label
+function removeNodeIdLabel(nodeId) {
+    var labelElement = nodeIdLabels[nodeId];
+    if (labelElement) {
+        labelElement.remove();
+        delete nodeIdLabels[nodeId];
+    }
+}
+
+// Function to update all node_id labels
+function updateAllNodeIdLabels() {
+    cy.nodes().forEach(function(node) {
+        updateNodeIdLabel(node);
+    });
+}
+
 // Function to style input box
 function styleInputBox(inputBox) {
     inputBox.style.position = 'absolute';
@@ -1623,6 +1683,33 @@ function createEdge(sourceNode, targetNode) {
         syncNodesToAPI([sourceNode, targetNode]);
     }, 100);
 }
+
+// Event handlers for node_id labels
+cy.on('add', 'node', function(evt) {
+    updateNodeIdLabel(evt.target);
+});
+
+cy.on('position', 'node', function(evt) {
+    updateNodeIdLabel(evt.target);
+});
+
+cy.on('style', 'node', function(evt) {
+    // Update label when node style changes (e.g., size changes)
+    updateNodeIdLabel(evt.target);
+});
+
+cy.on('remove', 'node', function(evt) {
+    removeNodeIdLabel(evt.target.id());
+});
+
+cy.on('pan zoom', function() {
+    updateAllNodeIdLabels();
+});
+
+// Update all labels on initial load
+cy.ready(function() {
+    updateAllNodeIdLabels();
+});
 
 // Handle click on nodes (for linking mode and selection)
 cy.on('tap', 'node', function(evt) {
