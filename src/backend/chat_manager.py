@@ -5,6 +5,7 @@ import json
 from langchain.agents import create_agent
 from langchain_core.tools import StructuredTool
 from langchain_core.messages import HumanMessage
+from langchain.messages import AIMessage, AIMessageChunk
 
 def create_rag_agent(vectorstore, config: Dict[str, Any] = None):
     """
@@ -60,12 +61,20 @@ def create_rag_agent(vectorstore, config: Dict[str, Any] = None):
     retrieval_tool = StructuredTool.from_function(
         func=search_documents,
         name="document_search",
-        description="Search through documents to find information relevant to the question. Use this tool when you need to find specific information from the knowledge base. Input should be a search query string."
+        description="Retrieves relevant document chunks from the knowledge base. This tool ONLY retrieves context - you must use this retrieved context to generate your own answer. Do NOT return the raw tool output as your answer. Input should be a search query string."
     )
 
     # LangChain 1.1.0+ API - use create_agent which returns a graph
     system_prompt = """You are a helpful assistant that answers questions using information from a knowledge base.
-When you need information to answer a question, use the document_search tool to retrieve relevant documents.
+
+WORKFLOW:
+1. ALWAYS use the document_search tool FIRST to retrieve relevant context from the knowledge base
+2. The document_search tool returns raw document chunks - these are CONTEXT, not your answer
+3. After receiving the context, synthesize and generate your own answer based on that context
+4. DO NOT simply return or repeat the tool output - you must process it and provide a proper answer
+
+IMPORTANT: The document_search tool output is context for you to use, not the final answer. You must read the retrieved documents and then provide a synthesized answer to the user's question.
+
 Answer as short as possible, don't be verbose.
 If you don't know the answer based on the retrieved documents, just say that you don't know, don't try to make up an answer."""
     
@@ -118,7 +127,8 @@ async def ask_question_stream(query):
         
         # Load config
         config = load_config()
-        
+        answer_stream = config.get("answer_stream", False)
+
         # Initialize vectorstore
         vectorstore = await get_vector_store_async(config=config)
         
@@ -131,38 +141,20 @@ async def ask_question_stream(query):
             try:
                 input_data = {"messages": [HumanMessage(content=query)]}
 
-                
-                # Stream agent execution
-                for chunk in agent_executor.stream(input_data):
-                    # The graph streams state updates
-                    for node_name, node_output in chunk.items():
-                        if node_name == "agent" and "messages" in node_output:
-                            # Extract messages from agent node
-                            messages = node_output.get("messages", [])
-                            for msg in messages:
-                                if hasattr(msg, 'content') and msg.content:
-                                    content = str(msg.content)
-                                    if content and content.strip():
-                                        full_answer += content
-                                        yield json.dumps({"type": "token", "content": content}) + "\n"
-                        elif "messages" in node_output:
-                            # Check other nodes for messages
-                            messages = node_output.get("messages", [])
-                            for msg in messages:
-                                if hasattr(msg, 'content') and msg.content:
-                                    content = str(msg.content)
-                                    if content and content.strip():
-                                        full_answer += content
-                                        yield json.dumps({"type": "token", "content": content}) + "\n"
-
-                
+                if answer_stream:
+                    for chunk, metadata in agent_executor.stream(input_data, stream_mode="messages"):
+                        if isinstance(chunk, AIMessageChunk):
+                            content = chunk.content
+                            if content and content.strip():
+                                full_answer += content
+                                yield json.dumps({"type": "token", "content": content}) + "\n"
                 # If no streaming tokens were captured, invoke synchronously and stream manually
-                if not full_answer:
+                else:
                     result = agent_executor.invoke(input_data)
                     # Extract final message from graph result
                     if "messages" in result:
                         for msg in result["messages"]:
-                            if hasattr(msg, 'content') and msg.content:
+                            if isinstance(msg, AIMessage) and msg.content:
                                 output = str(msg.content)
                                 if output:
                                     for char in output:
@@ -186,7 +178,8 @@ async def ask_question_cli(query):
     
     # Load config once
     config = load_config()
-    
+    answer_stream = config.get("answer_stream", False)
+
     vectorstore = await get_vector_store_async(config=config)
     agent_executor = create_rag_agent(vectorstore, config=config)
 
@@ -194,58 +187,36 @@ async def ask_question_cli(query):
     
     # Stream the answer tokens
     full_answer = ""
-    sources = set()
     
     try:
         input_data = {"messages": [HumanMessage(content=query)]}
-        
+        if answer_stream:
         # Stream agent execution
-        for chunk in agent_executor.stream(input_data):
-            for node_name, node_output in chunk.items():
-                if node_name == "agent" and "messages" in node_output:
-                    messages = node_output.get("messages", [])
-                    for msg in messages:
-                        if hasattr(msg, 'content') and msg.content:
-                            content = str(msg.content)
-                            if content and content.strip():
-                                print(content, end="", flush=True)
-                                full_answer += content
-                elif "messages" in node_output:
-                    messages = node_output.get("messages", [])
-                    for msg in messages:
-                        if hasattr(msg, 'content') and msg.content:
-                            content = str(msg.content)
-                            if content and content.strip():
-                                print(content, end="", flush=True)
-                                full_answer += content
-        
-        # If no streaming output, invoke synchronously
-        if not full_answer:
+            for chunk, metadata in agent_executor.stream(input_data, stream_mode="messages"):
+                if isinstance(chunk, AIMessageChunk):
+                    content = chunk.content
+                    if content and content.strip():
+                        print(content, end="", flush=True)
+                        full_answer += content
+        else:
             result = agent_executor.invoke(input_data)
             if "messages" in result:
                 for msg in result["messages"]:
-                    if hasattr(msg, 'content') and msg.content:
+                    if isinstance(msg, AIMessage) and msg.content:
                         output = str(msg.content)
                         if output:
                             print(output, end="", flush=True)
                             full_answer = output
         
         print()  # New line after streaming
-        
-        # Extract sources from intermediate steps if available
-        # Note: With agent, sources are harder to extract directly
-        # The agent uses the retrieval tool internally
-        if sources:
-            print("\n[Sources used:]")
-            for i, source in enumerate(list(sources)[:2], 1):
-                print(f"  {i}. {source}")
+
     except Exception as e:
         print(f"\nError: {str(e)}")
 
 
 if __name__ == "__main__":
     import asyncio
-    asyncio.run(update_vectors_async())
+    #asyncio.run(update_vectors_async())
     
     question = input("You: ").strip()
     print("Initializing QA chain with Ollama...")
