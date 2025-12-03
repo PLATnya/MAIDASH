@@ -129,7 +129,7 @@ function styleInputBox(inputBox) {
     inputBox.style.minWidth = '400px';
     inputBox.style.width = '500px';
     inputBox.style.maxWidth = '700px';
-    inputBox.setAttribute('placeholder', 'Type node label or command (e.g., /load)');
+    inputBox.setAttribute('placeholder', 'Type node label or command (e.g., /load, /ask, /search)');
     
     // Store base transform (should be set before calling this function)
     var baseTransform = inputBox.style.transform || 'translate(-50%, -50%)';
@@ -182,6 +182,13 @@ function handleCommand(command) {
             askQuestion(query);
         } else {
             alert('Please provide a question after /ask');
+        }
+    } else if (command.startsWith('/search ')) {
+        var query = command.substring(8).trim(); // Remove '/search ' prefix
+        if (query) {
+            performSearch(query);
+        } else {
+            alert('Please provide a search query after /search');
         }
     } else if (command.startsWith('/')) {
         console.log('Unknown command:', command);
@@ -437,6 +444,167 @@ function askQuestion(query) {
         answerDiv.textContent = 'Error: ' + error.message;
         answerDiv.style.color = '#e74c3c';
     });
+}
+
+// Function to perform web search and display results
+function performSearch(query) {
+    // Create a modal to display the search results
+    var modal = document.createElement('div');
+    modal.style.position = 'fixed';
+    modal.style.top = '0';
+    modal.style.left = '0';
+    modal.style.width = '100%';
+    modal.style.height = '100%';
+    modal.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+    modal.style.zIndex = '2000';
+    modal.style.display = 'flex';
+    modal.style.justifyContent = 'center';
+    modal.style.alignItems = 'center';
+    
+    var modalContent = document.createElement('div');
+    modalContent.style.backgroundColor = '#ffffff';
+    modalContent.style.borderRadius = '12px';
+    modalContent.style.padding = '24px';
+    modalContent.style.maxWidth = '900px';
+    modalContent.style.width = '90%';
+    modalContent.style.maxHeight = '80vh';
+    modalContent.style.overflow = 'auto';
+    modalContent.style.boxShadow = '0 12px 32px rgba(0, 0, 0, 0.3)';
+    
+    var title = document.createElement('h2');
+    title.textContent = 'Search: ' + query;
+    title.style.marginTop = '0';
+    title.style.marginBottom = '16px';
+    title.style.color = '#2c3e50';
+    title.style.fontSize = '20px';
+    
+    var resultsDiv = document.createElement('div');
+    resultsDiv.id = 'search-results-content';
+    resultsDiv.style.marginTop = '16px';
+    resultsDiv.style.color = '#2c3e50';
+    resultsDiv.style.fontSize = '16px';
+    resultsDiv.style.lineHeight = '1.6';
+    resultsDiv.textContent = 'Searching...';
+    
+    var buttonsContainer = document.createElement('div');
+    buttonsContainer.style.display = 'flex';
+    buttonsContainer.style.gap = '10px';
+    buttonsContainer.style.marginTop = '16px';
+    buttonsContainer.style.justifyContent = 'flex-end';
+    
+    var closeButton = document.createElement('button');
+    closeButton.textContent = 'Close';
+    closeButton.style.padding = '10px 20px';
+    closeButton.style.backgroundColor = '#3498db';
+    closeButton.style.color = '#ffffff';
+    closeButton.style.border = 'none';
+    closeButton.style.borderRadius = '6px';
+    closeButton.style.cursor = 'pointer';
+    closeButton.style.fontSize = '14px';
+    closeButton.style.fontWeight = 'bold';
+    
+    closeButton.addEventListener('click', function() {
+        document.body.removeChild(modal);
+    });
+    
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) {
+            document.body.removeChild(modal);
+        }
+    });
+    
+    buttonsContainer.appendChild(closeButton);
+    
+    modalContent.appendChild(title);
+    modalContent.appendChild(resultsDiv);
+    modalContent.appendChild(buttonsContainer);
+    modal.appendChild(modalContent);
+    document.body.appendChild(modal);
+    
+    // Send request to backend
+    fetch('/api/search', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ query: query })
+    })
+    .then(function(response) {
+        if (!response.ok) {
+            throw new Error('Failed to perform search: ' + response.statusText);
+        }
+        return response.json();
+    })
+    .then(function(data) {
+        // Format and display results
+        var html = '';
+        
+        // Display answer if available
+        if (data.answer) {
+            html += '<div style="margin-bottom: 20px; padding: 16px; background-color: #e8f5e9; border-radius: 8px; border-left: 4px solid #27ae60;">';
+            html += '<strong style="color: #27ae60; font-size: 18px;">Answer:</strong>';
+            html += '<p style="margin-top: 8px; margin-bottom: 0;">' + escapeHtml(data.answer) + '</p>';
+            html += '</div>';
+        }
+        
+        // Display search results
+        if (data.results && data.results.length > 0) {
+            html += '<div style="margin-top: 20px;">';
+            html += '<strong style="font-size: 18px; color: #2c3e50;">Search Results (' + data.results.length + '):</strong>';
+            html += '<div style="margin-top: 12px;">';
+            
+            data.results.forEach(function(result, index) {
+                html += '<div style="margin-bottom: 20px; padding: 16px; background-color: #f8f9fa; border-radius: 8px; border-left: 4px solid #3498db;">';
+                
+                // Title with link
+                if (result.url) {
+                    html += '<h3 style="margin-top: 0; margin-bottom: 8px;">';
+                    html += '<a href="' + escapeHtml(result.url) + '" target="_blank" style="color: #3498db; text-decoration: none; font-size: 16px;">';
+                    html += escapeHtml(result.title || 'No title');
+                    html += '</a>';
+                    html += '</h3>';
+                } else {
+                    html += '<h3 style="margin-top: 0; margin-bottom: 8px; color: #2c3e50; font-size: 16px;">';
+                    html += escapeHtml(result.title || 'No title');
+                    html += '</h3>';
+                }
+                
+                // Content
+                if (result.content) {
+                    html += '<p style="margin-top: 8px; margin-bottom: 8px; color: #555;">';
+                    html += escapeHtml(result.content.length > 300 ? result.content.substring(0, 300) + '...' : result.content);
+                    html += '</p>';
+                }
+                
+                // URL
+                if (result.url) {
+                    html += '<a href="' + escapeHtml(result.url) + '" target="_blank" style="color: #7f8c8d; font-size: 12px; text-decoration: none;">';
+                    html += escapeHtml(result.url);
+                    html += '</a>';
+                }
+                
+                html += '</div>';
+            });
+            
+            html += '</div>';
+            html += '</div>';
+        } else {
+            html += '<p style="color: #7f8c8d; font-style: italic;">No results found.</p>';
+        }
+        
+        resultsDiv.innerHTML = html;
+    })
+    .catch(function(error) {
+        console.error('Error performing search:', error);
+        resultsDiv.innerHTML = '<p style="color: #e74c3c;">Error: ' + escapeHtml(error.message) + '</p>';
+    });
+}
+
+// Helper function to escape HTML
+function escapeHtml(text) {
+    var div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 // Function to create an uneditable file node

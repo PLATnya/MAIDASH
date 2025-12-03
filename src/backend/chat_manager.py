@@ -7,10 +7,9 @@ from langchain.agents import create_agent
 from langchain_core.tools import StructuredTool
 from langchain_core.messages import HumanMessage
 from langchain.messages import AIMessage, AIMessageChunk
-try:
-    from tavily import TavilyClient
-except ImportError:
-    TavilyClient = None
+from tavily import TavilyClient
+from dotenv import load_dotenv
+
 
 def create_rag_agent(vectorstore, config: Dict[str, Any] = None):
     """
@@ -175,6 +174,63 @@ class NoQueryError(Exception):
 class ErrorProcessingQuestionError(Exception):
     pass
 
+class ErrorSearchingError(Exception):
+    pass
+
+async def search_web_tavily(query: str) -> dict:
+    """
+    Perform a web search using Tavily API.
+    
+    Args:
+        query: The search query string
+        
+    Returns:
+        Dictionary containing search results with answer, results, and sources
+    """
+    if not query:
+        raise NoQueryError()
+    
+    # Load config
+    load_dotenv()
+    tavily_api_key = os.getenv("TAVILY_API_KEY")
+    
+    if not TavilyClient:
+        raise ErrorSearchingError("Tavily client not available. Please install tavily-python package.")
+    
+    if not tavily_api_key:
+        raise ErrorSearchingError("Tavily API key not found. Please set TAVILY_API_KEY environment variable or configure it in config.json")
+    
+    try:
+        tavily_client = TavilyClient(api_key=tavily_api_key)
+        response = tavily_client.search(
+            query=query,
+            search_depth="advanced",
+            max_results=10,
+            include_answer=True,
+            include_raw_content=False
+        )
+        
+        # Format the response
+        result = {
+            "answer": response.get("answer", ""),
+            "results": [],
+            "query": query
+        }
+        
+        if response.get("results"):
+            for res in response["results"]:
+                result["results"].append({
+                    "title": res.get("title", "No title"),
+                    "content": res.get("content", ""),
+                    "url": res.get("url", ""),
+                    "score": res.get("score", 0)
+                })
+        
+        print(result)
+        return result
+    except Exception as e:
+        raise ErrorSearchingError(f"Error performing web search: {str(e)}")
+
 async def ask_question_stream(query):
     try:
         if not query:
@@ -280,4 +336,4 @@ if __name__ == "__main__":
     print("Initializing QA chain with Ollama...")
 
     
-    asyncio.run(ask_question_cli(question))
+    asyncio.run(search_web_tavily(question))

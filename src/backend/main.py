@@ -8,7 +8,7 @@ import uvicorn
 import json
 from datetime import datetime
 from typing import List
-from chat_manager import ErrorProcessingQuestionError, NoQueryError, ask_question_stream
+from chat_manager import ErrorProcessingQuestionError, NoQueryError, ask_question_stream, ErrorSearchingError, search_web_tavily
 from db_manager import clear_data_folder, update_vectors_async, get_vector_store_async
 
 app = FastAPI()
@@ -85,6 +85,9 @@ class FileNodeRequest(BaseModel):
     color: str = None  # Optional color field (hex color code)
 
 class AskRequest(BaseModel):
+    query: str
+
+class SearchRequest(BaseModel):
     query: str
 
 # API routes must be defined before the catch-all route
@@ -508,6 +511,20 @@ async def ask_question(request: AskRequest):
         raise HTTPException(status_code=500, detail="Error processing question")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error asking question: {str(e)}")
+
+@app.post("/api/search")
+async def search_web(request: SearchRequest):
+    """Perform a web search using Tavily and return results"""
+    try:
+        query = request.query.strip()
+        results = await search_web_tavily(query)
+        return JSONResponse(results)
+    except NoQueryError:
+        raise HTTPException(status_code=400, detail="Query cannot be empty")
+    except ErrorSearchingError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error performing search: {str(e)}")
 
 @app.get("/")
 async def read_root():
