@@ -3,7 +3,6 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from pathlib import Path
 import shutil
-import os
 import uvicorn
 import json
 from datetime import datetime

@@ -6,10 +6,8 @@ from pathlib import Path
 from langchain_community.document_loaders import PDFMinerLoader
 from langchain_ollama import OllamaEmbeddings
 from langchain_chroma import Chroma
-import os
 from dotenv import load_dotenv
 import uuid
-import sys
 import shutil
 import asyncio
 from typing import Optional
@@ -454,18 +452,18 @@ async def vectorize_all_data_async(
         lambda: split_and_combine_for_embedding(pdfs, [texts])
     )
     
-    # Write debug file
-    output_path = "all_data_dump.txt"
-    try:
-        def write_debug_file():
-            with open(output_path, "w", encoding="utf-8") as f:
-                for chunk in all_data:
-                    f.write(str(chunk))
-                    f.write("\n" + "-" * 80 + "\n")
-        await loop.run_in_executor(None, write_debug_file)
-        print(f"Dumped all data to {output_path}")
-    except Exception as e:
-        print(f"Failed to write all_data to file: {e}")
+    # # Write debug file
+    # output_path = "all_data_dump.txt"
+    # try:
+    #     def write_debug_file():
+    #         with open(output_path, "w", encoding="utf-8") as f:
+    #             for chunk in all_data:
+    #                 f.write(str(chunk))
+    #                 f.write("\n" + "-" * 80 + "\n")
+    #     await loop.run_in_executor(None, write_debug_file)
+    #     print(f"Dumped all data to {output_path}")
+    # except Exception as e:
+    #     print(f"Failed to write all_data to file: {e}")
     
     # Create vector store (this can be cancelled!)
     BUFF_VECTOR_STORE = await vectorize_document_chunks_async(

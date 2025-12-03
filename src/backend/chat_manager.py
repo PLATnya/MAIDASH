@@ -1,6 +1,6 @@
 from langchain_ollama import ChatOllama
 from db_manager import get_vector_store_async, load_config, wait_for_vectorization_if_ongoing, update_vectors_async
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 import json
 import os
 from langchain.agents import create_agent
