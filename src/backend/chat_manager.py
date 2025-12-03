@@ -169,27 +169,6 @@ If you don't know the answer based on the retrieved documents, just say that you
     
     return agent_graph
 
-
-# def mmr_search(question, vectordb, model_name: str = "deepseek-v3.1:671b-cloud"):
-#     """
-#     Perform MMR search and question answering on the vector store.
-
-#     Args:
-#     question (str): User's question.
-#     vectordb (Chroma): Vector store with embedded documents.
-
-#     Returns:
-#     str: Answer to the user's question.
-#     """
-#     llm = Ollama(model=model_name, temperature=0.7)
-#     compressor = LLMChainExtractor.from_llm(llm)
-#     compression_retriever = ContextualCompressionRetriever(
-#         base_compressor=compressor,
-#         base_retriever=vectordb.as_retriever()
-#     )
-#     compressed_docs = compression_retriever.invoke(question)
-#     return question_answering(llm, compressed_docs, vectordb, question)
-
 class NoQueryError(Exception):
     pass
 
