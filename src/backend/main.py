@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from pathlib import Path
 import shutil
@@ -12,10 +13,17 @@ from db_manager import clear_data_folder, update_vectors_async, get_vector_store
 
 app = FastAPI()
 
-# Get the frontend directory path
-frontend_dir = Path(__file__).parent.parent / "frontend"
+# Add CORS middleware to allow cross-origin requests from frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, replace with specific frontend URL(s)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Get the data directory path for storing uploaded files
-data_dir = Path(__file__).parent.parent.parent / "data"
+data_dir = Path(__file__).parent / "data"
 data_dir.mkdir(exist_ok=True)
 
 # Path to the JSON file that tracks uploaded files
@@ -524,32 +532,6 @@ async def search_web(request: SearchRequest):
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error performing search: {str(e)}")
-
-@app.get("/")
-async def read_root():
-    """Serve the main HTML page"""
-    html_path = frontend_dir / "index.html"
-    return FileResponse(html_path)
-
-@app.get("/{file_path:path}")
-async def serve_static_files(file_path: str):
-    """Serve static files from the frontend directory"""
-    # Don't intercept API routes
-    if file_path.startswith("api/"):
-        raise HTTPException(status_code=404, detail="Not found")
-    
-    file_full_path = frontend_dir / file_path
-    
-    # Security: prevent directory traversal
-    try:
-        file_full_path.resolve().relative_to(frontend_dir.resolve())
-    except ValueError:
-        raise HTTPException(status_code=403, detail="Forbidden")
-    
-    if file_full_path.exists() and file_full_path.is_file():
-        return FileResponse(file_full_path)
-    else:
-        raise HTTPException(status_code=404, detail="File not found")
 
 if __name__ == "__main__":
     clear_data_folder()

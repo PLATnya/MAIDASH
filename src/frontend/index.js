@@ -350,7 +350,7 @@ function askQuestion(query) {
     document.body.appendChild(modal);
     
     // Send request to backend
-    fetch('/api/ask', {
+    fetch(getApiUrl('api/ask'), {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
@@ -582,7 +582,7 @@ function performSearch(query) {
     document.body.appendChild(modal);
     
     // Send request to backend
-    fetch('/api/search', {
+    fetch(getApiUrl('api/search'), {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
@@ -762,7 +762,7 @@ function saveTextNodeToAPI(nodeId, label, linkedNodes, color) {
         payload.color = color;
     }
     
-    fetch('/api/text-node', {
+    fetch(getApiUrl('api/text-node'), {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
@@ -794,7 +794,7 @@ function updateTextNodeInAPI(nodeId, label, linkedNodes, color) {
         payload.color = color;
     }
     
-    fetch('/api/text-node', {
+    fetch(getApiUrl('api/text-node'), {
         method: 'PUT',
         headers: {
             'Content-Type': 'application/json'
@@ -817,7 +817,7 @@ function updateTextNodeInAPI(nodeId, label, linkedNodes, color) {
 
 // Function to delete text node from API
 function deleteTextNodeFromAPI(nodeId) {
-    fetch('/api/text-node/' + encodeURIComponent(nodeId), {
+    fetch(getApiUrl('api/text-node/' + encodeURIComponent(nodeId)), {
         method: 'DELETE',
         headers: {
             'Content-Type': 'application/json'
@@ -870,7 +870,7 @@ function saveFileNodeToAPI(nodeId, label, linkedNodes, filename, color) {
         payload.color = color;
     }
     
-    fetch('/api/file-node', {
+    fetch(getApiUrl('api/file-node'), {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
@@ -903,7 +903,7 @@ function updateFileNodeInAPI(nodeId, label, linkedNodes, filename, color) {
         payload.color = color;
     }
     
-    fetch('/api/file-node', {
+    fetch(getApiUrl('api/file-node'), {
         method: 'PUT',
         headers: {
             'Content-Type': 'application/json'
@@ -926,7 +926,7 @@ function updateFileNodeInAPI(nodeId, label, linkedNodes, filename, color) {
 
 // Function to delete file node from API
 function deleteFileNodeFromAPI(nodeId) {
-    fetch('/api/file-node/' + encodeURIComponent(nodeId), {
+    fetch(getApiUrl('api/file-node/' + encodeURIComponent(nodeId)), {
         method: 'DELETE',
         headers: {
             'Content-Type': 'application/json'
@@ -989,7 +989,7 @@ function uploadFileToDB(file) {
     var formData = new FormData();
     formData.append('file', file);
     
-    fetch('/api/upload', {
+    fetch(getApiUrl('api/upload'), {
         method: 'POST',
         body: formData
     })
@@ -1383,7 +1383,7 @@ function deleteNode(node) {
         deleteFileNodeFromAPI(nodeId);
         
         // Delete file from backend
-        fetch('/api/delete', {
+        fetch(getApiUrl('api/delete'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'

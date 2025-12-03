@@ -205,7 +205,7 @@ def split_and_combine_for_embedding(
     
     return text_splitter.split_documents(all_documents)
 
-data_json_path = Path(__file__).parent.parent.parent / "data" / "data.json"
+data_json_path = Path(__file__).parent / "data" / "data.json"
 
 def clear_data_folder():
     """Delete all files from the 'data' directory (excluding subdirectories)."""

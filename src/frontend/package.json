@@ -1,5 +1,15 @@
 {
+  "name": "frontend",
+  "version": "1.0.0",
+  "description": "Frontend application",
+  "scripts": {
+    "dev": "npx http-server . -p 3000 -c-1 --cors",
+    "start": "npx http-server . -p 3000 -c-1 --cors"
+  },
   "dependencies": {
     "cytoscape": "^3.33.1"
+  },
+  "devDependencies": {
+    "http-server": "^14.1.1"
   }
 }
