@@ -8,8 +8,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+    curl
 
 # Install Ollama
 RUN curl -fsSL https://ollama.com/install.sh | sh
@@ -24,8 +23,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Copy and set permissions for entrypoint script
-COPY entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
+COPY entrypoint.py /app/entrypoint.py
+RUN chmod +x /app/entrypoint.py
 
 # Create data directory and ollama directory structure
 RUN mkdir -p /app/data && \
@@ -36,5 +35,5 @@ RUN mkdir -p /app/data && \
 EXPOSE 8000
 
 # Use entrypoint script
-ENTRYPOINT ["/app/entrypoint.sh"]
+ENTRYPOINT ["python", "/app/entrypoint.py"]
 

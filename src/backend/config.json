@@ -18,8 +18,8 @@
     "persist_directory": "chroma_db"
   },
   "text_splitter": {
-    "chunk_size": 400,
-    "chunk_overlap": 100
+    "chunk_size": 600,
+    "chunk_overlap": 150
   }
 }
 
