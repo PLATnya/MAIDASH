@@ -12,7 +12,7 @@
     }
   },
   "embedding": {
-    "model_name": "mxbai-embed-large:latest"
+    "model_name": "nomic-embed-text:latest"
   },
   "database": {
     "persist_directory": "chroma_db"

@@ -1,5 +1,5 @@
 from langchain_ollama import ChatOllama
-from db_manager import get_vector_store_async, load_config, wait_for_vectorization_if_ongoing, update_vectors_async
+from db_manager import get_vector_store_async, load_config, wait_for_vectorization_if_ongoing
 from typing import Dict, Any
 import json
 import os
@@ -336,4 +336,4 @@ if __name__ == "__main__":
     print("Initializing QA chain with Ollama...")
 
     
-    asyncio.run(search_web_tavily(question))
+    asyncio.run(ask_question_cli(question))

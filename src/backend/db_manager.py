@@ -109,44 +109,72 @@ async def vectorize_document_chunks_async(
     print("Creating embeddings with Ollama...")
     print(f"Using embedding model: {embedding_model}")
     
-    # Create embeddings (this might be blocking, so run in executor if needed)
-    embeddings = OllamaEmbeddings(model=embedding_model)
+    # Create embeddings with explicit configuration
+    # Set base_url to ensure connection to local Ollama instance
+    embeddings = OllamaEmbeddings(
+        model=embedding_model,
+        num_ctx=4096,
+        base_url="http://localhost:11434",   # Explicit Ollama API endpoint
+    )
+    
+    # Test embedding connection before processing all documents
+    print("Testing embedding connection...")
+    try:
+        test_embedding = embeddings.embed_query("test")
+        print(f"Embedding connection successful. Vector dimension: {len(test_embedding)}")
+    except Exception as e:
+        print(f"Warning: Embedding test failed: {e}")
+        print("Continuing anyway, but embeddings may fail...")
     
     # Use unique collection name
     if not collection_name:
         collection_name = f"collection_{uuid.uuid4().hex[:8]}"
     
     print(f"Creating ChromaDB vector store with collection: {collection_name}...")
+    print(f"Processing {len(documents)} document chunks...")
     
     # Use afrom_documents if available, otherwise fallback to sync version in executor
     try:
-        # Check if Chroma has afrom_documents method
-        if hasattr(Chroma, 'afrom_documents'):
-            vector_store = await Chroma.afrom_documents(
-                documents=documents,
-                embedding=embeddings,
-                collection_name=collection_name,
-            )
-        else:
-            # Fallback: run sync version in executor
-            loop = asyncio.get_event_loop()
-            vector_store = await loop.run_in_executor(
-                None,
-                lambda: Chroma.from_documents(
+        # Wrap in timeout to prevent indefinite hanging
+        async def create_vector_store_with_timeout():
+            if hasattr(Chroma, 'afrom_documents'):
+                print("Using async afrom_documents method...")
+                return await Chroma.afrom_documents(
                     documents=documents,
                     embedding=embeddings,
                     collection_name=collection_name,
                 )
-            )
+            else:
+                # Fallback: run sync version in executor
+                print("Using sync from_documents in executor...")
+                loop = asyncio.get_event_loop()
+                return await loop.run_in_executor(
+                    None,
+                    lambda: Chroma.from_documents(
+                        documents=documents,
+                        embedding=embeddings,
+                        collection_name=collection_name,
+                    )
+                )
         
+
+        vector_store = await create_vector_store_with_timeout()
         print(f"ChromaDB vector store created with {len(documents)} document chunks\n")
         return vector_store
+    except asyncio.TimeoutError:
+        error_msg = f"Timeout: Embedding process took longer than 10 minutes. This may indicate an issue with the embedding model or large document size."
+        print(error_msg)
+        raise Exception(error_msg)
     except asyncio.CancelledError:
         print("Vectorization cancelled during document embedding")
         raise
     except Exception as e:
-        print(f"Error creating vector store: {e}")
-        raise
+        error_msg = f"Error creating vector store: {e}"
+        print(error_msg)
+        print(f"Error type: {type(e).__name__}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
+        raise Exception(error_msg) from e
 
 def split_and_combine_for_embedding(
     documents: List[Document] = None,
@@ -419,6 +447,7 @@ async def get_vector_store_async(config: Dict[str, Any] = None) -> Chroma:
             pass
     
     if BUFF_VECTOR_STORE is None:
+        print("Vector store is None, creating new one...")
         config = config or load_config()
         BUFF_VECTOR_STORE = await vectorize_all_data_async(config=config)
     
@@ -452,30 +481,10 @@ async def vectorize_all_data_async(
         lambda: split_and_combine_for_embedding(pdfs, [texts])
     )
     
-    # # Write debug file
-    # output_path = "all_data_dump.txt"
-    # try:
-    #     def write_debug_file():
-    #         with open(output_path, "w", encoding="utf-8") as f:
-    #             for chunk in all_data:
-    #                 f.write(str(chunk))
-    #                 f.write("\n" + "-" * 80 + "\n")
-    #     await loop.run_in_executor(None, write_debug_file)
-    #     print(f"Dumped all data to {output_path}")
-    # except Exception as e:
-    #     print(f"Failed to write all_data to file: {e}")
-    
-    # Create vector store (this can be cancelled!)
+
     BUFF_VECTOR_STORE = await vectorize_document_chunks_async(
         all_data, 
         config=config
     )
     
     return BUFF_VECTOR_STORE
-
-# if __name__ == "__main__":
-#     if "--clear" in sys.argv:
-#         print("Clearing ChromaDB database...")
-#         clear_chroma_db()
-#     else:
-#         vectorize_all_data()

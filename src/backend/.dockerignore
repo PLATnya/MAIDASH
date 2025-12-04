@@ -19,3 +19,4 @@ data/*
 .git
 .gitignore
 
+test_data/
