@@ -124,3 +124,21 @@ npm run dev
 
 - Data is persisted in `src/backend/data/` directory
 - Ollama models are stored in `./ollama_models` (mounted as volume)
+
+## Usage Examples
+
+![Example 1](imgs/examples/1.png)
+
+![Example 2](imgs/examples/2.png)
+
+![Example 3](imgs/examples/3.png)
+
+![Example 4](imgs/examples/4.png)
+
+![Example 5](imgs/examples/5.png)
+
+![Example 6](imgs/examples/6.png)
+
+![Example 7](imgs/examples/7.png)
+
+![Example 8](imgs/examples/8.png)
