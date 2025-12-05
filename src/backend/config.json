@@ -1,0 +1,25 @@
+{
+  "answer_stream": true,
+  "llm": {
+    "model_name": "deepseek-v3.1:671b-cloud",
+    "temperature": 0.4
+  },
+  "retriever": {
+    "search_type": "mmr",
+    "search_kwargs": {
+      "k": 5,
+      "fetch_k": 20
+    }
+  },
+  "embedding": {
+    "model_name": "nomic-embed-text:latest"
+  },
+  "database": {
+    "persist_directory": "chroma_db"
+  },
+  "text_splitter": {
+    "chunk_size": 600,
+    "chunk_overlap": 150
+  }
+}
+

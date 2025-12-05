@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./src/backend
+      dockerfile: Dockerfile
+    container_name: backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src/backend/data:/app/data
+      - ./ollama_models:/app/.ollama/models
+      - ~/.ollama:/app/.ollama
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - HOME=/app
+      - OLLAMA_MODELS=/app/.ollama/models
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    build:
+      context: ./src/frontend
+      dockerfile: Dockerfile
+    container_name: frontend
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    depends_on:
+      - backend
+    restart: unless-stopped
+    # Note: API_BASE_URL can be set in .env file
+    # For Docker Compose internal communication, use: http://backend:8000
+
