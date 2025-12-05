@@ -1,4 +1,4 @@
-# Knowledge Graph Board
+# Interactive board with some AI
 
 An interactive board application with RAG (Retrieval Augmented Generation) capabilities, allowing users to build, visualize, and query knowledge with AI-powered question answering.
 
