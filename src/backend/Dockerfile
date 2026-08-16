@@ -8,8 +8,8 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
-    curl
-
+    curl \
+    zstd
 # Install Ollama
 RUN curl -fsSL https://ollama.com/install.sh | sh
 

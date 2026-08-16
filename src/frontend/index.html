@@ -4,34 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Board</title>
+    <link rel="stylesheet" href="palette.css">
     <link rel="stylesheet" href="styles.css">
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-            width: 100vw;
-            height: 100vh;
-            overflow: hidden;
-        }
-        #cy {
-            width: 100%;
-            height: 100%;
-        }
-        .selection-box {
-            position: absolute;
-            border: 2px dashed #3498db;
-            background-color: rgba(52, 152, 219, 0.1);
-            pointer-events: none;
-            z-index: 999;
-            display: none;
-        }
-    </style>
 </head>
 <body>
     <div id="cy"></div>
-    
+
+    <script src="palette.js"></script>
     <script src="node_modules/cytoscape/dist/cytoscape.min.js"></script>
     <script src="index.js"></script>
 </body>
 </html>
-

@@ -6,37 +6,47 @@ function getApiUrl(endpoint) {
     return `${cleanBaseUrl}/${cleanEndpoint}`;
 }
 
+if (!window.MAIDASH_PALETTE) {
+    console.error('MAIDASH_PALETTE is not defined. Ensure palette.js is loaded before index.js — Cytoscape will not render with the correct theme.');
+}
+
 var cy = cytoscape({
     container: document.getElementById('cy'),
     elements: [],
     style: [{
+        selector: 'core',
+        style: {
+            'background-color': MAIDASH_PALETTE.base,
+            'background-opacity': 1
+        }
+    }, {
         selector: 'node',
         style: {
             'width': 300,
             'height': 100,
             'shape': 'round-rectangle',
-            'background-color': '#5D6D7E',
+            'background-color': MAIDASH_PALETTE.surface0,
             'background-opacity': 0.95,
             'border-width': 3,
-            'border-color': '#34495E',
+            'border-color': MAIDASH_PALETTE.surface1,
             'border-opacity': 1,
             'border-style': 'solid',
             'label': 'data(label)',
             'text-valign': 'center',
             'text-halign': 'center',
-            'color': '#FFFFFF',
+            'color': MAIDASH_PALETTE.text,
             'font-size': '16px',
             'font-weight': '600',
             'font-family': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
             'text-wrap': 'wrap',
             'text-max-width': '280px',
             'text-outline-width': 2,
-            'text-outline-color': '#2C3E50',
+            'text-outline-color': MAIDASH_PALETTE.crust,
             'text-outline-opacity': 0.8,
             'padding': '10px',
             'overlay-opacity': 0,
             'shadow-blur': 8,
-            'shadow-color': 'rgba(0, 0, 0, 0.3)',
+            'shadow-color': 'rgba(0, 0, 0, 0.5)',
             'shadow-offset-x': 2,
             'shadow-offset-y': 2,
             'shadow-opacity': 0.6
@@ -51,7 +61,7 @@ var cy = cytoscape({
         selector: 'edge',
         style: {
             'width': 3,
-            'line-color': '#7F8C8D',
+            'line-color': MAIDASH_PALETTE.overlay0,
             'line-style': 'solid',
             'curve-style': 'bezier',
             'target-arrow-shape': 'none',
@@ -61,9 +71,9 @@ var cy = cytoscape({
             'font-family': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
             'text-rotation': 'autorotate',
             'text-margin-y': -12,
-            'color': '#2C3E50',
+            'color': MAIDASH_PALETTE.text,
             'text-outline-width': 2,
-            'text-outline-color': '#FFFFFF',
+            'text-outline-color': MAIDASH_PALETTE.base,
             'text-outline-opacity': 0.9,
             'opacity': 0.8,
             'overlay-opacity': 0
@@ -71,33 +81,33 @@ var cy = cytoscape({
     }, {
         selector: 'node.linking-source',
         style: {
-            'border-color': '#E74C3C',
+            'border-color': MAIDASH_PALETTE.red,
             'border-width': 5,
             'border-opacity': 1,
             'shadow-blur': 12,
-            'shadow-color': '#E74C3C',
+            'shadow-color': MAIDASH_PALETTE.red,
             'shadow-opacity': 0.8
         }
     }, {
         selector: 'node.resizing',
         style: {
-            'border-color': '#27AE60',
+            'border-color': MAIDASH_PALETTE.green,
             'border-width': 4,
             'border-opacity': 1,
             'shadow-blur': 10,
-            'shadow-color': '#27AE60',
+            'shadow-color': MAIDASH_PALETTE.green,
             'shadow-opacity': 0.7
         }
     }, {
         selector: 'node.selected',
         style: {
-            'border-color': '#F39C12',
+            'border-color': MAIDASH_PALETTE.yellow,
             'border-width': 5,
             'border-opacity': 1,
-            'background-color': '#F1C40F',
+            'background-color': MAIDASH_PALETTE.surface2,
             'background-opacity': 0.95,
             'shadow-blur': 15,
-            'shadow-color': '#F39C12',
+            'shadow-color': MAIDASH_PALETTE.yellow,
             'shadow-opacity': 0.9,
             'shadow-offset-x': 3,
             'shadow-offset-y': 3
@@ -105,9 +115,9 @@ var cy = cytoscape({
     }, {
         selector: 'node.uneditable',
         style: {
-            'background-color': '#95A5A6',
+            'background-color': MAIDASH_PALETTE.surface1,
             'background-opacity': 0.85,
-            'border-color': '#7F8C8D',
+            'border-color': MAIDASH_PALETTE.overlay0,
             'border-width': 2,
             'opacity': 0.85,
             'shadow-opacity': 0.3
@@ -330,7 +340,7 @@ function formatSearchResults(data) {
                 html += '</a>';
                 html += '</h3>';
             } else {
-                html += '<h3 class="search-result-title" style="color: #2c3e50; font-size: 16px;">';
+                html += '<h3 class="search-result-title">';
                 html += escapeHtml(result.title || 'No title');
                 html += '</h3>';
             }
@@ -353,7 +363,7 @@ function formatSearchResults(data) {
         html += '</div>';
         html += '</div>';
     } else {
-        html += '<p style="color: #7f8c8d; font-style: italic;">No results found.</p>';
+        html += '<p class="search-empty">No results found.</p>';
     }
     
     return html;
@@ -526,7 +536,7 @@ function askQuestion(query) {
                             }
                         } else if (data.type === 'error') {
                             answerDiv.textContent = 'Error: ' + data.message;
-                            answerDiv.style.color = '#e74c3c';
+                            answerDiv.classList.add('error-message');
                         }
                     } catch (e) {
                         console.error('Error parsing stream data:', e, 'Line:', line);
@@ -537,7 +547,7 @@ function askQuestion(query) {
             }).catch(function(error) {
                 console.error('Stream error:', error);
                 answerDiv.textContent = 'Error: ' + error.message;
-                answerDiv.style.color = '#e74c3c';
+                answerDiv.classList.add('error-message');
             });
         }
         
@@ -546,7 +556,7 @@ function askQuestion(query) {
     .catch(function(error) {
         console.error('Error asking question:', error);
         answerDiv.textContent = 'Error: ' + error.message;
-        answerDiv.style.color = '#e74c3c';
+        answerDiv.classList.add('error-message');
     });
 }
 
@@ -571,7 +581,7 @@ function performSearch(query) {
     })
     .catch(function(error) {
         console.error('Error performing search:', error);
-        resultsDiv.innerHTML = '<p style="color: #e74c3c;">Error: ' + escapeHtml(error.message) + '</p>';
+        resultsDiv.innerHTML = '<p class="error-text">Error: ' + escapeHtml(error.message) + '</p>';
     });
 }
 
@@ -945,7 +955,7 @@ function changeNodeColor(node) {
     var colorInput = document.createElement('input');
     colorInput.type = 'color';
     colorInput.className = 'color-input';
-    colorInput.value = currentColor === 'grey' ? '#808080' : currentColor;
+    colorInput.value = currentColor === 'grey' ? MAIDASH_PALETTE.overlay0 : currentColor;
     colorPicker.appendChild(colorInput);
     
     var preview = document.createElement('div');
@@ -958,14 +968,20 @@ function changeNodeColor(node) {
     });
     
     var presetColors = [
-        { name: 'Grey', value: '#808080' },
-        { name: 'Blue', value: '#3498db' },
-        { name: 'Green', value: '#27ae60' },
-        { name: 'Red', value: '#e74c3c' },
-        { name: 'Orange', value: '#f39c12' },
-        { name: 'Purple', value: '#9b59b6' },
-        { name: 'Yellow', value: '#f1c40f' },
-        { name: 'Teal', value: '#1abc9c' }
+        { name: 'Rosewater', value: MAIDASH_PALETTE.rosewater },
+        { name: 'Flamingo', value: MAIDASH_PALETTE.flamingo },
+        { name: 'Pink', value: MAIDASH_PALETTE.pink },
+        { name: 'Mauve', value: MAIDASH_PALETTE.mauve },
+        { name: 'Red', value: MAIDASH_PALETTE.red },
+        { name: 'Maroon', value: MAIDASH_PALETTE.maroon },
+        { name: 'Peach', value: MAIDASH_PALETTE.peach },
+        { name: 'Yellow', value: MAIDASH_PALETTE.yellow },
+        { name: 'Green', value: MAIDASH_PALETTE.green },
+        { name: 'Teal', value: MAIDASH_PALETTE.teal },
+        { name: 'Sky', value: MAIDASH_PALETTE.sky },
+        { name: 'Sapphire', value: MAIDASH_PALETTE.sapphire },
+        { name: 'Blue', value: MAIDASH_PALETTE.blue },
+        { name: 'Lavender', value: MAIDASH_PALETTE.lavender }
     ];
     
     var presetContainer = document.createElement('div');
